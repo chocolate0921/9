@@ -7,6 +7,7 @@ import { HomeTab } from "@/components/home-tab";
 import { ScheduleTab } from "@/components/schedule-tab";
 import { TaskTab } from "@/components/task-tab";
 import { getDemoWorkspace } from "@/data/carrymate";
+import { saveTeamToSupabase } from "@/lib/supabase/teams";
 import {
   ConfirmedMeeting,
   FileCategory,
@@ -73,6 +74,7 @@ export function CarryMateApp() {
   // 공유 성공 토스트 상태로 대체 가능
   const [inviteError, setInviteError] = useState("");
   const [copyFeedback, setCopyFeedback] = useState("");
+  const [teamSaveMessage, setTeamSaveMessage] = useState("");
   const [pendingMemberExitId, setPendingMemberExitId] = useState<string | null>(
     null,
   );
@@ -156,10 +158,11 @@ export function CarryMateApp() {
     setSheetMode(null);
     setInviteError("");
     setCopyFeedback("");
+    setTeamSaveMessage("");
     setPendingMemberExitId(null);
   };
 
-  const createWorkspaceFromForm = (input: {
+  const createWorkspaceFromForm = async (input: {
     teamName: string;
     courseName: string;
     deadline: string;
@@ -230,6 +233,18 @@ export function CarryMateApp() {
       },
     ];
 
+    const saveResult = await saveTeamToSupabase({
+      teamName: input.teamName.trim(),
+      courseName: input.courseName.trim(),
+      deadlineLabel: input.deadline.trim(),
+      memberNames: names,
+    });
+
+    if (!saveResult.ok) {
+      setTeamSaveMessage(saveResult.message);
+      return false;
+    }
+
     setProject(nextProject);
     setMembers(nextMembers);
     setTasks(starterTasks);
@@ -241,6 +256,8 @@ export function CarryMateApp() {
     setOnboardingSheetMode("shareInvite");
     setInviteError("");
     setCopyFeedback("");
+    setTeamSaveMessage(saveResult.message);
+    return true;
   };
 
   const handleJoinWithCode = (code: string) => {
@@ -495,6 +512,7 @@ export function CarryMateApp() {
         <CreateTeamSheet
           onClose={() => setOnboardingSheetMode(null)}
           onSubmit={createWorkspaceFromForm}
+          submitMessage={teamSaveMessage}
         />
       );
     }
@@ -534,9 +552,11 @@ export function CarryMateApp() {
       return (
         <ShareInviteModal
           copyFeedback={copyFeedback}
+          noticeMessage={teamSaveMessage}
           onClose={() => {
             setOnboardingSheetMode(null);
             setViewMode("workspace");
+            setTeamSaveMessage("");
           }}
           onCopy={() => setCopyFeedback("초대 정보 복사 완료!")}
         />
@@ -550,7 +570,10 @@ export function CarryMateApp() {
     return (
       <>
         <OnboardingScreen
-          onCreateTeam={() => setOnboardingSheetMode("createTeam")}
+          onCreateTeam={() => {
+            setTeamSaveMessage("");
+            setOnboardingSheetMode("createTeam");
+          }}
           onJoinCode={() => {
             setInviteError("");
             setOnboardingSheetMode("joinTeam");
@@ -803,10 +826,12 @@ function QrScannerModal({
 
 function ShareInviteModal({
   copyFeedback,
+  noticeMessage,
   onCopy,
   onClose,
 }: {
   copyFeedback: string;
+  noticeMessage: string;
   onCopy: () => void;
   onClose: () => void;
 }) {
@@ -821,6 +846,11 @@ function ShareInviteModal({
           <p className="mt-2 text-[13px] leading-6 text-muted">
             발표 전에 코드, 링크, QR 중 편한 방식으로 바로 공유할 수 있어요.
           </p>
+          {noticeMessage ? (
+            <p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-success">
+              {noticeMessage}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-4 space-y-3">
@@ -862,6 +892,7 @@ function ShareInviteModal({
 function CreateTeamSheet({
   onClose,
   onSubmit,
+  submitMessage,
 }: {
   onClose: () => void;
   onSubmit: (input: {
@@ -869,13 +900,16 @@ function CreateTeamSheet({
     courseName: string;
     deadline: string;
     memberNames: string;
-  }) => void;
+  }) => Promise<boolean>;
+  submitMessage: string;
 }) {
   // TODO: Supabase 연동 시 이 폼 상태는 react-hook-form + 서버 submit 로직으로 대체 가능
   const [teamName, setTeamName] = useState("");
   const [courseName, setCourseName] = useState("");
   const [deadline, setDeadline] = useState("");
   const [memberNames, setMemberNames] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localMessage, setLocalMessage] = useState("");
 
   return (
     <SheetShell title="새 팀 만들기" onClose={onClose}>
@@ -905,13 +939,30 @@ function CreateTeamSheet({
           placeholder="예: 민지, 준호, 서연"
         />
       </div>
+      {localMessage || submitMessage ? (
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+          {localMessage || submitMessage}
+        </p>
+      ) : null}
       <PrimaryButton
-        label="생성하기"
-        onClick={() => {
-          if (!teamName.trim() || !courseName.trim() || !deadline.trim()) {
+        label={isSubmitting ? "저장 중..." : "생성하기"}
+        onClick={async () => {
+          if (isSubmitting) {
             return;
           }
-          onSubmit({ teamName, courseName, deadline, memberNames });
+          if (!teamName.trim() || !courseName.trim() || !deadline.trim()) {
+            setLocalMessage("팀명, 과목명, 마감일을 모두 입력해 주세요.");
+            return;
+          }
+          setLocalMessage("");
+          setIsSubmitting(true);
+          const ok = await onSubmit({ teamName, courseName, deadline, memberNames });
+          if (!ok) {
+            setLocalMessage(
+              "Supabase 저장에 실패했습니다. 환경변수와 teams 테이블 정책을 확인해 주세요.",
+            );
+          }
+          setIsSubmitting(false);
         }}
       />
     </SheetShell>

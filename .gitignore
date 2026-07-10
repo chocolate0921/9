@@ -5,4 +5,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+dev.out.log
+dev.err.log
+.codex-dev.log
+.codex-dev.err.log
+.env.local
 *.tsbuildinfo
