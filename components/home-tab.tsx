@@ -1,8 +1,5 @@
 import { useState } from "react";
-import {
-  ConfirmedMeeting,
-  Task,
-} from "@/types/carrymate";
+import { ConfirmedMeeting, Task } from "@/types/carrymate";
 
 type Summary = {
   todayTaskCount: number;
@@ -15,41 +12,21 @@ type Summary = {
   briefing: string;
 };
 
-const healthStatusMap = {
-  safe: {
-    title: "안전",
-    className: "bg-emerald-50 text-success",
-    detail: "지금 흐름이면 큰 문제 없이 마감 가능해요.",
-  },
-  warning: {
-    title: "주의",
-    className: "bg-amber-50 text-warning",
-    detail: "핵심 업무 하나만 더 밀리면 발표 준비가 급해져요.",
-  },
-  risk: {
-    title: "위험",
-    className: "bg-rose-50 text-danger",
-    detail: "담당자 미정 업무나 급한 일정이 있어 바로 정리가 필요해요.",
-  },
-};
-
 const analysisPresets = [
-  // TODO: Supabase 연동 시 AI 분석 결과는 `analysis_results` 조회값이나
-  // Edge Function 응답으로 대체 가능
   {
     status: "safe" as const,
     summary:
-      "🟢 안전: 현재 흐름이 안정적입니다. 오늘 일정과 진행률 모두 목표 범위 안에 있어요.",
+      "현재 프로젝트 흐름이 안정적이에요. 오늘 예정된 업무를 순서대로 진행해 주세요.",
   },
   {
     status: "warning" as const,
     summary:
-      "🟡 유의: 현재 진행률이 목표 대비 약간 느립니다. 오늘 할 일 1개만 더 끝내면 다시 안정권으로 돌아와요.",
+      "오늘 마감 업무가 남아 있어요. 우선순위가 높은 업무부터 확인해 주세요.",
   },
   {
     status: "risk" as const,
     summary:
-      "⚠️ 경고: 현재 진행률이 목표 대비 15% 지연 중입니다. 서연 님의 피드백 응답 속도가 평소보다 느립니다.",
+      "담당자가 정해지지 않았거나 진행이 지연된 업무가 있어 빠른 확인이 필요해요.",
   },
 ];
 
@@ -68,13 +45,10 @@ export function HomeTab({
   onJumpToTasks: () => void;
   onJumpToSchedule: () => void;
 }) {
-  const healthCard = healthStatusMap[summary.healthStatus];
   const todayItems = tasks
     .filter((task) => task.dueLabel === "오늘" && task.status !== "done")
     .slice(0, 3);
 
-  // TODO: Supabase 연동 시 홈 상단 AI 분석 카드 상태는
-  // 실시간 분석 API 응답 또는 background job 결과값으로 대체 가능
   const [analysisState, setAnalysisState] = useState(() =>
     summary.healthStatus === "risk"
       ? analysisPresets[2]
@@ -82,230 +56,394 @@ export function HomeTab({
         ? analysisPresets[1]
         : analysisPresets[0],
   );
-  const [updatedAt, setUpdatedAt] = useState("방금 전");
+
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefreshAnalysis = () => {
-    // 새로고침은 실제 API 호출 대신 짧은 지연 후 랜덤 상태를 보여줘
-    // 팀원이 "분석이 다시 도는 느낌"을 바로 확인할 수 있게 한다.
     setIsRefreshing(true);
 
     window.setTimeout(() => {
-      const nextPreset =
-        analysisPresets[Math.floor(Math.random() * analysisPresets.length)];
-      const nextMinute = Math.floor(Math.random() * 8) + 1;
-
-      setAnalysisState(nextPreset);
-      setUpdatedAt(`${nextMinute}분 전 업데이트`);
+      const randomIndex = Math.floor(Math.random() * analysisPresets.length);
+      setAnalysisState(analysisPresets[randomIndex]);
       setIsRefreshing(false);
     }, 700);
   };
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <SectionTitle title="AI 프로젝트 상태 분석" />
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <TrafficSignal status={analysisState.status} />
-            <div>
-              <p className="text-[15px] font-medium leading-7 text-ink">
-                {analysisState.summary}
-              </p>
-              <p className="mt-3 text-[12px] text-muted">{updatedAt}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleRefreshAnalysis}
-            disabled={isRefreshing}
-            className="shrink-0 rounded-2xl border border-line bg-canvas px-4 py-3 text-[13px] font-semibold text-ink transition hover:bg-white disabled:opacity-60"
-          >
-            {isRefreshing ? "분석 중..." : "새로고침"}
-          </button>
-        </div>
-      </Card>
+    <div className="space-y-4 pb-4">
+      {/* 전체 진행률 */}
+      <section className="rounded-[28px] border border-[#eeeaf8] bg-white px-5 py-7 shadow-[0_10px_30px_rgba(80,63,155,0.08)]">
+        <p className="text-center text-[12px] font-semibold text-[#77718a]">
+          오늘의 진행률
+        </p>
 
-      <section className="rounded-card border border-line bg-white p-6 shadow-soft">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-              Today
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold text-ink">{summary.progress}%</h2>
-            <p className="mt-1 text-[13px] text-muted">
-              진행률 · {summary.doneCount}개 완료
-            </p>
-          </div>
-          <div className="rounded-2xl border border-line bg-canvas px-4 py-3 text-right">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-muted">남은 업무</p>
-            <p className="mt-1 text-lg font-semibold text-ink">{summary.todayTaskCount}개</p>
-          </div>
-        </div>
-        <div className="mt-5 h-2 rounded-full bg-slate-100">
-          <div
-            className="h-2 rounded-full bg-brand"
-            style={{ width: `${summary.progress}%` }}
-          />
+        <div className="mt-5 flex justify-center">
+          <ProgressCircle progress={summary.progress} />
         </div>
       </section>
 
-      <Card>
-        <SectionTitle title="AI 마감 브리핑" action="업무 보기" onClick={onJumpToTasks} />
-        <p className="text-[15px] font-medium leading-7 text-ink">
-          {summary.briefing}
+      {/* 가장 중요한 업무 */}
+      <section className="overflow-hidden rounded-[26px] bg-gradient-to-br from-[#7469f4] to-[#5148df] p-5 text-white shadow-[0_16px_32px_rgba(83,72,220,0.28)]">
+        <div className="flex items-center justify-between">
+          <span className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold">
+            다음 우선순위
+          </span>
+
+          <button
+            type="button"
+            onClick={onJumpToTasks}
+            className="text-[12px] font-semibold text-white/80"
+          >
+            업무 보기
+          </button>
+        </div>
+
+        <h2 className="mt-5 text-[21px] font-bold leading-8">
+          {summary.urgentTask?.title ?? "오늘의 핵심 업무를 확인해 주세요"}
+        </h2>
+
+        <p className="mt-3 text-[13px] leading-6 text-white/75">
+          {summary.urgentTask
+            ? `${summary.urgentTask.dueLabel}까지 완료해야 하는 중요한 업무입니다.`
+            : "모든 긴급 업무를 완료했어요. 다음 업무를 확인해 보세요."}
         </p>
-        {summary.unassignedCount > 0 ? (
-          <div className="mt-5 rounded-2xl bg-rose-50 px-4 py-4">
-            <p className="text-[13px] font-semibold text-danger">
-              담당자 미정 업무 {summary.unassignedCount}개
-            </p>
-            <p className="mt-1 text-[13px] text-muted">
-              업무 탭에서 자동 재분배하기를 눌러 빠르게 복구할 수 있어요.
-            </p>
-          </div>
-        ) : null}
-        {summary.urgentTask ? (
-          <div className="mt-5 rounded-2xl border border-line bg-canvas px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-              지금 가장 급한 일
-            </p>
-            <p className="mt-2 text-[15px] font-semibold text-ink">{summary.urgentTask.title}</p>
-            <p className="mt-1 text-[13px] text-muted">{summary.urgentTask.dueLabel} 마감</p>
-          </div>
-        ) : null}
-      </Card>
 
-      <Card>
-        <SectionTitle title="마감 신호등" />
-        <div className={`rounded-2xl px-4 py-4 ${healthCard.className}`}>
-          <div className="flex items-center justify-between">
-            <p className="text-base font-semibold">{healthCard.title}</p>
-            <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] font-semibold">
-              실시간 요약
-            </span>
+        <div className="mt-6 flex items-center justify-between">
+          <div className="flex -space-x-2">
+            <Avatar label="민" />
+            <Avatar label="준" />
+            <Avatar label="서" />
           </div>
-          <p className="mt-2 text-[13px] leading-6">{healthCard.detail}</p>
+
+          <button
+            type="button"
+            onClick={onJumpToTasks}
+            className="rounded-xl bg-white px-4 py-2.5 text-[12px] font-bold text-[#5148df] shadow-lg"
+          >
+            지금 시작
+          </button>
         </div>
-      </Card>
+      </section>
 
-      <Card>
-        <SectionTitle title="오늘 해야 할 일" />
-        <div className="space-y-3">
-          {todayItems.map((task) => (
-            <div key={task.id} className="flex items-center justify-between rounded-2xl border border-line px-4 py-4">
-              <div>
-                <p className="text-[15px] font-semibold text-ink">{task.title}</p>
-                <p className="mt-1 text-[13px] text-muted">
-                  {task.status === "todo" ? "시작 전" : "진행 중"}
-                </p>
-              </div>
-              <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
-                오늘
-              </span>
+      {/* AI 브리핑 */}
+      <section className="rounded-[22px] border-l-4 border-[#665cf0] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(67,55,120,0.08)]">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f0eeff] text-lg">
+            ✦
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-[13px] font-bold text-[#4f46d8]">
+                AI 브리핑
+              </h3>
+
+              <button
+                type="button"
+                onClick={handleRefreshAnalysis}
+                disabled={isRefreshing}
+                className="text-[11px] font-semibold text-[#8b86a0] disabled:opacity-50"
+              >
+                {isRefreshing ? "분석 중..." : "새로 분석"}
+              </button>
             </div>
-          ))}
-        </div>
-      </Card>
 
-      <Card>
-        <SectionTitle title="오늘 일정" action="일정 보기" onClick={onJumpToSchedule} />
-        <div className="space-y-3">
-          {todayMeetings.length === 0 ? (
-            <EmptyState text="아직 확정된 오늘 일정이 없어요." />
+            <p className="mt-2 text-[13px] leading-6 text-[#625d70]">
+              {analysisState.summary}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 위험 알림 */}
+      {summary.unassignedCount > 0 && (
+        <AlertCard
+          icon="△"
+          title="AI 리스크 분석"
+          description={`담당자가 지정되지 않은 업무가 ${summary.unassignedCount}개 있습니다. 업무 탭에서 자동 재분배해 주세요.`}
+          tone="pink"
+          onClick={onJumpToTasks}
+        />
+      )}
+
+      {summary.todayTaskCount >= 2 && (
+        <AlertCard
+          icon="♧"
+          title="중요 마감기한"
+          description={`오늘 처리해야 할 업무가 ${summary.todayTaskCount}개 남았습니다. 중요한 업무부터 진행해 주세요.`}
+          tone="red"
+          onClick={onJumpToTasks}
+        />
+      )}
+
+      {/* 오늘 할 일 */}
+      <section>
+        <div className="mb-3 flex items-center justify-between px-1">
+          <h3 className="text-[16px] font-bold text-[#252236]">
+            오늘의 할 일
+          </h3>
+
+          <button
+            type="button"
+            onClick={onJumpToTasks}
+            className="text-[12px] font-semibold text-[#6259e8]"
+          >
+            모두 보기
+          </button>
+        </div>
+
+        <div className="space-y-2.5">
+          {todayItems.length === 0 ? (
+            <EmptyState text="오늘 예정된 업무를 모두 완료했어요." />
           ) : (
-            todayMeetings.map((meeting) => (
-              <MeetingRow key={meeting.id} meeting={meeting} />
+            todayItems.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={onJumpToTasks}
+                className="flex w-full items-center gap-3 rounded-[20px] border border-[#eeeaf7] bg-white px-4 py-4 text-left shadow-[0_7px_20px_rgba(64,52,115,0.07)]"
+              >
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                    task.status === "inProgress"
+                      ? "bg-[#eeeaff] text-[#6259e8]"
+                      : "bg-[#f6f4fb] text-[#aaa5b8]"
+                  }`}
+                >
+                  {task.status === "inProgress" ? "◔" : "✓"}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold text-[#343044]">
+                    {task.title}
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-[#9993a7]">
+                    {task.status === "inProgress" ? "진행 중" : "오늘 마감"}
+                  </p>
+                </div>
+
+                <span className="text-lg text-[#aba5bb]">⋮</span>
+              </button>
             ))
           )}
         </div>
-      </Card>
+      </section>
 
-      <Card>
-        <SectionTitle title="다가오는 회의" />
-        <div className="space-y-3">
-          {upcomingMeetings.length === 0 ? (
-            <EmptyState text="다가오는 회의가 아직 없어요." />
-          ) : (
-            upcomingMeetings.map((meeting) => (
+      {/* 오늘 일정 */}
+      {todayMeetings.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center justify-between px-1">
+            <h3 className="text-[16px] font-bold text-[#252236]">
+              오늘의 일정
+            </h3>
+
+            <button
+              type="button"
+              onClick={onJumpToSchedule}
+              className="text-[12px] font-semibold text-[#6259e8]"
+            >
+              일정 보기
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            {todayMeetings.slice(0, 2).map((meeting) => (
               <MeetingRow key={meeting.id} meeting={meeting} />
-            ))
-          )}
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 진행 중인 프로젝트 */}
+      <section>
+        <h3 className="mb-3 px-1 text-[16px] font-bold text-[#252236]">
+          진행 중인 프로젝트
+        </h3>
+
+        <div className="grid grid-cols-2 gap-3">
+          <QuickMenu
+            icon="♧"
+            title="프로젝트 현황"
+            description={`${summary.inProgressCount}개 진행 중`}
+            onClick={onJumpToTasks}
+          />
+
+          <QuickMenu
+            icon="↗"
+            title="업무 현황"
+            description={`${summary.doneCount}개 완료`}
+            onClick={onJumpToTasks}
+          />
+
+          <QuickMenu
+            icon="◷"
+            title="팀 일정"
+            description={`${todayMeetings.length + upcomingMeetings.length}개 일정`}
+            onClick={onJumpToSchedule}
+          />
+
+          <QuickMenu
+            icon="+"
+            title="새 업무"
+            description="업무 추가하기"
+            onClick={onJumpToTasks}
+          />
         </div>
-      </Card>
+      </section>
     </div>
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <section className="rounded-card border border-line bg-white p-6 shadow-soft">{children}</section>;
+function ProgressCircle({ progress }: { progress: number }) {
+  const safeProgress = Math.max(0, Math.min(progress, 100));
+  const radius = 48;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (safeProgress / 100) * circumference;
+
+  return (
+    <div className="relative h-32 w-32">
+      <svg
+        viewBox="0 0 120 120"
+        className="h-full w-full -rotate-90"
+        aria-label={`프로젝트 진행률 ${safeProgress}%`}
+      >
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke="#efedf7"
+          strokeWidth="9"
+        />
+
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke="#5b52e8"
+          strokeWidth="9"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-all duration-700"
+        />
+      </svg>
+
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <strong className="text-[28px] font-extrabold text-[#5148df]">
+          {safeProgress}%
+        </strong>
+        <span className="mt-0.5 text-[10px] font-semibold text-[#9892a8]">
+          진행 상태
+        </span>
+      </div>
+    </div>
+  );
 }
 
-function SectionTitle({
+function Avatar({ label }: { label: string }) {
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#665cf0] bg-[#f6d9bd] text-[10px] font-bold text-[#4f423b]">
+      {label}
+    </span>
+  );
+}
+
+function AlertCard({
+  icon,
   title,
-  action,
+  description,
+  tone,
   onClick,
 }: {
+  icon: string;
   title: string;
-  action?: string;
-  onClick?: () => void;
+  description: string;
+  tone: "pink" | "red";
+  onClick: () => void;
 }) {
+  const toneClass =
+    tone === "pink"
+      ? "border-l-[#f0549a] bg-[#fffafd] text-[#d93b83]"
+      : "border-l-[#ef4d58] bg-[#fffafa] text-[#dc3845]";
+
   return (
-    <div className="mb-5 flex items-center justify-between gap-4">
-      <h3 className="text-base font-semibold text-ink">{title}</h3>
-      {action && onClick ? (
-        <button
-          type="button"
-          onClick={onClick}
-          className="text-[13px] font-medium text-muted"
-        >
-          {action}
-        </button>
-      ) : null}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-[22px] border-l-4 px-4 py-4 text-left shadow-[0_8px_24px_rgba(67,55,120,0.07)] ${toneClass}`}
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 text-lg">{icon}</span>
+
+        <div>
+          <h3 className="text-[13px] font-bold">{title}</h3>
+          <p className="mt-2 text-[12px] leading-5 text-[#686272]">
+            {description}
+          </p>
+        </div>
+      </div>
+    </button>
   );
 }
 
 function MeetingRow({ meeting }: { meeting: ConfirmedMeeting }) {
   return (
-    <div className="rounded-2xl border border-line px-4 py-4">
-      <p className="text-[15px] font-semibold text-ink">{meeting.title}</p>
-      <p className="mt-1 text-[13px] text-muted">
-        {meeting.dateLabel} · {meeting.timeRange}
-      </p>
-    </div>
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-[20px] border border-[#eeeaf7] bg-white px-4 py-4 text-left shadow-[0_7px_20px_rgba(64,52,115,0.07)]"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f1efff] text-[#6259e8]">
+        ◷
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-bold text-[#343044]">
+          {meeting.title}
+        </p>
+        <p className="mt-1 text-[11px] text-[#9993a7]">
+          {meeting.dateLabel} · {meeting.timeRange}
+        </p>
+      </div>
+
+      <span className="text-[#aaa5b8]">›</span>
+    </button>
+  );
+}
+
+function QuickMenu({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="min-h-28 rounded-[22px] border border-[#eeeaf7] bg-white p-4 text-left shadow-[0_8px_24px_rgba(64,52,115,0.08)] transition active:scale-[0.98]"
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f1efff] text-[17px] font-bold text-[#6259e8]">
+        {icon}
+      </span>
+
+      <p className="mt-4 text-[13px] font-bold text-[#322e40]">{title}</p>
+      <p className="mt-1 text-[10px] text-[#9a94a8]">{description}</p>
+    </button>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-line px-4 py-6 text-[13px] text-muted">
+    <div className="rounded-[20px] border border-dashed border-[#ddd8ea] bg-white px-4 py-7 text-center text-[12px] text-[#9690a5]">
       {text}
-    </div>
-  );
-}
-
-function TrafficSignal({
-  status,
-}: {
-  status: "safe" | "warning" | "risk";
-}) {
-  const activeClassMap = {
-    safe: "bg-emerald-400 shadow-[0_0_0_3px_rgba(74,222,128,0.12)]",
-    warning: "bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.12)]",
-    risk: "bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.12)]",
-  };
-
-  return (
-    <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-canvas px-3 py-3">
-      {(["safe", "warning", "risk"] as const).map((light) => (
-        <span
-          key={light}
-          className={`h-4 w-4 rounded-full ${
-            status === light ? activeClassMap[light] : "bg-slate-200"
-          }`}
-        />
-      ))}
     </div>
   );
 }
