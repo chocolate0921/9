@@ -10,6 +10,7 @@ export type Project = {
   name: string;
   courseName: string;
   deadlineLabel: string;
+  inviteCode?: string;
   description?: string;
   startDate?: string;
   endDate?: string;

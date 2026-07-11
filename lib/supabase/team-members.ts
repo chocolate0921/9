@@ -3,6 +3,7 @@ import {
   supabasePublishableKey,
   supabaseUrl,
 } from "@/lib/supabase/config";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type TeamMemberRow = {
   id: string;
@@ -25,6 +26,8 @@ export type CreateTeamMemberInput = {
   isLeader: boolean;
   status: string;
 };
+
+export type CreateTeamMemberSeed = Omit<CreateTeamMemberInput, "teamId">;
 
 export type UpdateTeamMemberInput = {
   profileId?: string | null;
@@ -69,7 +72,7 @@ function ensureSupabaseConfig() {
     return {
       ok: false as const,
       message:
-        "Supabase 환경변수가 없습니다. .env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 넣어주세요.",
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
     };
   }
 
@@ -82,6 +85,70 @@ function getHeaders() {
     Authorization: `Bearer ${supabasePublishableKey}`,
     "Content-Type": "application/json",
     Prefer: "return=representation",
+  };
+}
+
+function normalizeSeedInput(
+  memberNamesOrSeeds: string[] | CreateTeamMemberSeed[],
+): CreateTeamMemberSeed[] {
+  if (memberNamesOrSeeds.length === 0) {
+    return [];
+  }
+
+  if (typeof memberNamesOrSeeds[0] !== "string") {
+    return (memberNamesOrSeeds as CreateTeamMemberSeed[])
+      .map((member) => ({
+        profileId: member.profileId ?? null,
+        name: member.name.trim(),
+        role: member.role.trim(),
+        skillTag: member.skillTag.trim(),
+        isLeader: member.isLeader,
+        status: member.status.trim(),
+      }))
+      .filter((member) => member.name);
+  }
+
+  return (memberNamesOrSeeds as string[])
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name, index) => ({
+      profileId: null,
+      name,
+      role: index === 0 ? "팀장 / 발표 정리" : "팀원",
+      skillTag: SKILL_TAG_POOL[index % SKILL_TAG_POOL.length],
+      isLeader: index === 0,
+      status: "active",
+    }));
+}
+
+async function getLinkedMemberByProfile(teamId: string, profileId: string) {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      data: null,
+      errorMessage:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("*")
+    .eq("team_id", teamId)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      data: null,
+      errorMessage: error.message,
+    };
+  }
+
+  return {
+    data,
+    errorMessage: null,
   };
 }
 
@@ -120,32 +187,65 @@ export async function getTeamMembersByTeam(
   };
 }
 
+export async function getUnlinkedTeamMembersByTeam(
+  teamId: string,
+): Promise<TeamMemberQueryResult<TeamMemberRow[]>> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("*")
+    .eq("team_id", teamId)
+    .is("profile_id", null)
+    .order("joined_at", { ascending: true });
+
+  if (error) {
+    return {
+      ok: false,
+      message: `미연결 team_members 조회 실패: ${error.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data,
+    message: "미연결 team_members 조회 성공",
+  };
+}
+
 export async function createTeamMembers(
   teamId: string,
-  memberNames: string[],
+  memberNamesOrSeeds: string[] | CreateTeamMemberSeed[],
 ): Promise<TeamMemberQueryResult<TeamMemberRow[]>> {
   const configError = ensureSupabaseConfig();
   if (configError) {
     return configError;
   }
 
-  const normalizedNames = memberNames.map((name) => name.trim()).filter(Boolean);
-  const payload: CreateTeamMemberInput[] = normalizedNames.map((name, index) => ({
-    teamId,
-    profileId: null,
-    name,
-    role: index === 0 ? "팀장 / 발표 정리" : "팀원",
-    skillTag: SKILL_TAG_POOL[index % SKILL_TAG_POOL.length],
-    isLeader: index === 0,
-    status: "active",
-  }));
+  const payload = normalizeSeedInput(memberNamesOrSeeds);
+
+  if (payload.length === 0) {
+    return {
+      ok: true,
+      data: [],
+      message: "생성할 team_members가 없습니다.",
+    };
+  }
 
   const response = await fetch(`${supabaseUrl}/rest/v1/team_members?select=*`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(
       payload.map((member) => ({
-        team_id: member.teamId,
+        team_id: teamId,
         profile_id: member.profileId ?? null,
         name: member.name,
         role: member.role,
@@ -169,6 +269,189 @@ export async function createTeamMembers(
     ok: true,
     data: rows,
     message: "team_members 생성 성공",
+  };
+}
+
+export async function getTeamMemberByProfile(
+  teamId: string,
+  profileId: string,
+): Promise<TeamMemberQueryResult<TeamMemberRow | null>> {
+  const lookup = await getLinkedMemberByProfile(teamId, profileId);
+
+  if (lookup.errorMessage) {
+    return {
+      ok: false,
+      message: `현재 로그인 사용자의 team_members 조회 실패: ${lookup.errorMessage}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data: lookup.data,
+    message: lookup.data
+      ? "현재 로그인 사용자의 team_members 조회 성공"
+      : "현재 로그인 사용자와 연결된 team_members 행이 없습니다.",
+  };
+}
+
+export async function connectProfileToTeamMember(input: {
+  teamId: string;
+  memberId: string;
+  profileId: string;
+}): Promise<TeamMemberQueryResult<TeamMemberRow>> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const linkedMember = await getLinkedMemberByProfile(input.teamId, input.profileId);
+  if (linkedMember.errorMessage) {
+    return {
+      ok: false,
+      message: `같은 팀에서 기존 profile_id 연결 여부를 확인하지 못했습니다: ${linkedMember.errorMessage}`,
+    };
+  }
+
+  if (linkedMember.data) {
+    return {
+      ok: false,
+      message: "이 계정은 이미 현재 팀의 다른 team_members 행과 연결되어 있습니다.",
+    };
+  }
+
+  const { data: targetRow, error: targetError } = await supabase
+    .from("team_members")
+    .select("*")
+    .eq("id", input.memberId)
+    .eq("team_id", input.teamId)
+    .single();
+
+  if (targetError) {
+    return {
+      ok: false,
+      message: `연결 대상 team_member 조회 실패: ${targetError.message}`,
+    };
+  }
+
+  if (targetRow.profile_id) {
+    return {
+      ok: false,
+      message: "이미 다른 계정과 연결된 팀원 항목입니다.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("team_members")
+    .update({
+      profile_id: input.profileId,
+    })
+    .eq("id", input.memberId)
+    .eq("team_id", input.teamId)
+    .is("profile_id", null)
+    .select("*")
+    .single();
+
+  if (error) {
+    return {
+      ok: false,
+      message: `team_members profile_id 연결 실패: ${error.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data,
+    message: "team_members profile_id 연결 성공",
+  };
+}
+
+export async function createAndLinkTeamMember(input: {
+  teamId: string;
+  profileId: string;
+  name: string;
+  role?: string;
+  skillTag?: string;
+}): Promise<TeamMemberQueryResult<TeamMemberRow>> {
+  const linkedMember = await getLinkedMemberByProfile(input.teamId, input.profileId);
+
+  if (linkedMember.errorMessage) {
+    return {
+      ok: false,
+      message: `기존 team_members 연결 여부 확인 실패: ${linkedMember.errorMessage}`,
+    };
+  }
+
+  if (linkedMember.data) {
+    return {
+      ok: false,
+      message: "이 계정은 이미 현재 팀의 team_members 행과 연결되어 있습니다.",
+    };
+  }
+
+  const createResult = await createTeamMembers(input.teamId, [
+    {
+      profileId: input.profileId,
+      name: input.name.trim(),
+      role: input.role?.trim() || "팀원",
+      skillTag: input.skillTag?.trim() || SKILL_TAG_POOL[0],
+      isLeader: false,
+      status: "active",
+    },
+  ]);
+
+  if (!createResult.ok || !createResult.data?.[0]) {
+    return {
+      ok: false,
+      message: createResult.message,
+    };
+  }
+
+  return {
+    ok: true,
+    data: createResult.data[0],
+    message: "새 team_member 생성 및 연결 성공",
+  };
+}
+
+export async function linkProfileToTeamMember(
+  memberId: string,
+  profileId: string,
+): Promise<TeamMemberQueryResult<TeamMemberRow>> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("team_members")
+    .update({
+      profile_id: profileId,
+    })
+    .eq("id", memberId)
+    .select("*")
+    .single();
+
+  if (error) {
+    return {
+      ok: false,
+      message: `team_members profile_id 연결 실패: ${error.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data,
+    message: "team_members profile_id 연결 성공",
   };
 }
 

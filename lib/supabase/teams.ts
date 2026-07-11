@@ -8,6 +8,7 @@ import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
 export type CreateTeamInput = {
   teamName: string;
   courseName: string;
+  inviteCode?: string;
   deadlineLabel?: string;
   memberNames: string[];
   description?: string;
@@ -51,6 +52,8 @@ type UpdateTeamDetailsInput = {
   endDate?: string;
 };
 
+const INVITE_CODE_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
 function getTodayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -81,6 +84,22 @@ function normalizeDeadlineLabel(deadlineLabel?: string, endDate?: string) {
   return "";
 }
 
+export function generateInviteCode() {
+  const bytes = new Uint32Array(8);
+
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * INVITE_CODE_CHARSET.length);
+    }
+  }
+
+  return Array.from(bytes, (value) =>
+    INVITE_CODE_CHARSET[value % INVITE_CODE_CHARSET.length],
+  ).join("");
+}
+
 async function parseErrorMessage(response: Response) {
   const fallbackMessage = await response.text();
   let detail = fallbackMessage;
@@ -108,6 +127,7 @@ export async function saveTeamToSupabase(
 
   const endDate = normalizeEndDate(input.endDate);
   const deadlineLabel = normalizeDeadlineLabel(input.deadlineLabel, endDate ?? undefined);
+  const inviteCode = input.inviteCode?.trim() || generateInviteCode();
 
   const response = await fetch(`${supabaseUrl}/rest/v1/teams?select=*`, {
     method: "POST",
@@ -120,6 +140,7 @@ export async function saveTeamToSupabase(
     body: JSON.stringify({
       team_name: input.teamName,
       course_name: input.courseName,
+      invite_code: inviteCode,
       deadline_label: deadlineLabel,
       member_names: input.memberNames,
       description: normalizeDescription(input.description),

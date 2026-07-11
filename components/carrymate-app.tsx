@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { Session, User } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { FileTab } from "@/components/file-tab";
@@ -20,10 +21,26 @@ import {
   updateTaskFields,
 } from "@/lib/supabase/tasks";
 import {
+  connectProfileToTeamMember,
+  createAndLinkTeamMember,
   createTeamMembers,
+  getTeamMemberByProfile,
   getTeamMembersByTeam,
+  getUnlinkedTeamMembersByTeam,
+  type CreateTeamMemberSeed,
+  type TeamMemberRow,
 } from "@/lib/supabase/team-members";
-import { saveTeamToSupabase } from "@/lib/supabase/teams";
+import {
+  getCurrentSession,
+  signInWithEmail,
+  signOut,
+  signUpWithEmail,
+  subscribeToAuthChanges,
+} from "@/lib/supabase/auth";
+import {
+  generateInviteCode,
+  saveTeamToSupabase,
+} from "@/lib/supabase/teams";
 import {
   ConfirmedMeeting,
   FileCategory,
@@ -46,6 +63,7 @@ type OnboardingSheetMode =
   | "joinQr"
   | "shareInvite"
   | null;
+type AuthMode = "signIn" | "signUp";
 
 type ProjectSummary = {
   totalCount: number;
@@ -65,6 +83,7 @@ type ProjectSummary = {
 const DEFAULT_AVAILABILITY = ["수 18:00", "목 14:00", "목 19:00"];
 const ROLE_POOL = ["팀장 / 진행 정리", "자료 조사", "디자인", "문서 작성"];
 const SKILL_POOL = ["정리형", "리서치형", "비주얼형", "문서형"];
+const DEMO_INVITE_CODE = "CARRY2026";
 
 function getTaskDueAt(daysFromToday: number, hour = 18) {
   const date = new Date();
@@ -89,6 +108,51 @@ function getEffectiveDueAt(task: Task) {
   return null;
 }
 
+function getUserNickname(user: User | null) {
+  if (!user) {
+    return "";
+  }
+
+  const metadata = user.user_metadata;
+  if (
+    typeof metadata === "object" &&
+    metadata !== null &&
+    "nickname" in metadata &&
+    typeof metadata.nickname === "string"
+  ) {
+    return metadata.nickname;
+  }
+
+  return user.email?.split("@")[0] ?? "";
+}
+
+function normalizeMemberNameKey(value: string) {
+  return value.trim().toLocaleLowerCase("ko-KR");
+}
+
+function dedupeMemberNames(names: string[]) {
+  const seen = new Set<string>();
+
+  return names.filter((name) => {
+    const key = normalizeMemberNameKey(name);
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildInviteLink(inviteCode: string) {
+  const origin =
+    typeof window !== "undefined" && window.location.origin
+      ? window.location.origin
+      : "https://carrymate.app";
+
+  return `${origin}/join/${inviteCode}`;
+}
+
 export function CarryMateApp() {
   // TODO: Supabase Auth/Router 연동 시 온보딩 여부와 현재 탭 상태는
   // 세션/유저 프로필/URL 상태를 기준으로 초기화하도록 교체 가능
@@ -109,6 +173,19 @@ export function CarryMateApp() {
   const [files, setFiles] = useState<FileItem[]>(() => getDemoWorkspace().files);
   const [taskSyncMessage, setTaskSyncMessage] = useState("");
   const [memberSyncMessage, setMemberSyncMessage] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [memberLinkMessage, setMemberLinkMessage] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isMemberLinkLoading, setIsMemberLinkLoading] = useState(false);
+  const [isAuthSheetOpen, setIsAuthSheetOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isMemberLinkSheetOpen, setIsMemberLinkSheetOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("signIn");
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [currentMember, setCurrentMember] = useState<TeamMember | null>(null);
+  const [unlinkedMemberRows, setUnlinkedMemberRows] = useState<TeamMemberRow[]>([]);
   const [isTaskCreating, setIsTaskCreating] = useState(false);
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
   const tasksRef = useRef(tasks);
@@ -133,6 +210,13 @@ export function CarryMateApp() {
     [members],
   );
   const hasPersistentProjectId = isUuid(project.id);
+  const authenticatedUser = session?.user ?? null;
+  const isAuthenticated = Boolean(authenticatedUser);
+  const isTeamMember = Boolean(currentMember);
+  const isTeamLeader = Boolean(currentMember?.isLeader);
+  const userNickname = getUserNickname(authenticatedUser ?? user);
+  const inviteCode = project.inviteCode || (!hasPersistentProjectId ? DEMO_INVITE_CODE : "");
+  const inviteLink = inviteCode ? buildInviteLink(inviteCode) : "";
 
   useEffect(() => {
     tasksRef.current = tasks;
@@ -141,6 +225,48 @@ export function CarryMateApp() {
   useEffect(() => {
     membersRef.current = members;
   }, [members]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSession = async () => {
+      const result = await getCurrentSession();
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.ok) {
+        console.error(result.message);
+        setAuthMessage(result.message);
+      }
+
+      setSession(result.session);
+      setUser(result.user);
+      setAuthLoading(false);
+    };
+
+    void loadSession();
+
+    const subscription = subscribeToAuthChanges((nextSession, nextUser) => {
+      if (cancelled) {
+        return;
+      }
+
+      setSession(nextSession);
+      setUser(nextUser);
+      setAuthLoading(false);
+
+      if (!nextUser) {
+        setCurrentMember(null);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasPersistentProjectId) {
@@ -219,6 +345,39 @@ export function CarryMateApp() {
       cancelled = true;
     };
   }, [hasPersistentProjectId, project.id]);
+
+  useEffect(() => {
+    if (!hasPersistentProjectId || !authenticatedUser?.id) {
+      setCurrentMember(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCurrentMember = async () => {
+      const result = await getTeamMemberByProfile(project.id, authenticatedUser.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.ok) {
+        console.error(result.message);
+        setAuthMessage(result.message);
+        return;
+      }
+
+      setCurrentMember(
+        result.data ? mapTeamMemberRowsToTeamMembers([result.data])[0] : null,
+      );
+    };
+
+    void loadCurrentMember();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticatedUser?.id, hasPersistentProjectId, project.id]);
 
   // 파생 요약 값은 여러 카드가 동시에 참조하므로
   // 렌더마다 직접 계산하지 않고 한 곳에서 일관되게 계산한다.
@@ -335,7 +494,197 @@ export function CarryMateApp() {
     setTeamSaveMessage("");
     setTaskSyncMessage("");
     setMemberSyncMessage("");
+    setMemberLinkMessage("");
+    setIsInviteModalOpen(false);
+    setIsMemberLinkSheetOpen(false);
+    setUnlinkedMemberRows([]);
+    setCurrentMember(null);
     setPendingMemberExitId(null);
+  };
+
+  const openAuthSheet = (mode: AuthMode) => {
+    setAuthMode(mode);
+    setAuthMessage("");
+    setIsAuthSheetOpen(true);
+  };
+
+  const closeAuthSheet = () => {
+    if (isAuthSubmitting) {
+      return;
+    }
+
+    setIsAuthSheetOpen(false);
+  };
+
+  const closeInviteModal = () => {
+    setIsInviteModalOpen(false);
+  };
+
+  const openInviteModal = () => {
+    setCopyFeedback("");
+    setIsInviteModalOpen(true);
+  };
+
+  const handleCopyInviteInfo = async () => {
+    if (!inviteCode || !inviteLink) {
+      setCopyFeedback("초대 정보를 아직 만들지 못했어요.");
+      return;
+    }
+
+    const payload = `초대 코드: ${inviteCode}\n초대 링크: ${inviteLink}`;
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+        setCopyFeedback("초대 정보 복사 완료!");
+        return;
+      }
+    } catch {
+      // Clipboard API can fail depending on browser permissions.
+    }
+
+    setCopyFeedback(payload);
+  };
+
+  const handleSignIn = async (input: { email: string; password: string }) => {
+    setIsAuthSubmitting(true);
+    const result = await signInWithEmail(input);
+    setIsAuthSubmitting(false);
+    setAuthMessage(result.message);
+
+    if (!result.ok) {
+      return false;
+    }
+
+    setSession(result.session);
+    setUser(result.user);
+    setIsAuthSheetOpen(false);
+    return true;
+  };
+
+  const handleSignUp = async (input: {
+    email: string;
+    password: string;
+    nickname: string;
+  }) => {
+    setIsAuthSubmitting(true);
+    const result = await signUpWithEmail(input);
+    setIsAuthSubmitting(false);
+    setAuthMessage(result.message);
+
+    if (!result.ok) {
+      return false;
+    }
+
+    setSession(result.session);
+    setUser(result.user);
+
+    if (!result.needsEmailConfirmation) {
+      setIsAuthSheetOpen(false);
+    }
+
+    return true;
+  };
+
+  const handleSignOut = async () => {
+    const result = await signOut();
+    setAuthMessage(result.message);
+
+    if (!result.ok) {
+      console.error(result.message);
+      return;
+    }
+
+    setSession(null);
+    setUser(null);
+    setCurrentMember(null);
+  };
+
+  const openMemberLinkSheet = async () => {
+    if (!authenticatedUser?.id || !hasPersistentProjectId) {
+      setMemberLinkMessage("로그인된 실제 팀에서만 팀원 연결을 진행할 수 있어요.");
+      return;
+    }
+
+    setIsMemberLinkLoading(true);
+    const result = await getUnlinkedTeamMembersByTeam(project.id);
+    setIsMemberLinkLoading(false);
+
+    if (!result.ok || !result.data) {
+      console.error(result.message);
+      setMemberLinkMessage(result.message);
+      return;
+    }
+
+    setUnlinkedMemberRows(result.data);
+    setMemberLinkMessage("");
+    setIsMemberLinkSheetOpen(true);
+  };
+
+  const closeMemberLinkSheet = () => {
+    if (isMemberLinkLoading) {
+      return;
+    }
+
+    setIsMemberLinkSheetOpen(false);
+  };
+
+  const handleClaimMember = async (memberId: string) => {
+    if (!authenticatedUser?.id || !hasPersistentProjectId) {
+      return;
+    }
+
+    setIsMemberLinkLoading(true);
+    const result = await connectProfileToTeamMember({
+      teamId: project.id,
+      memberId,
+      profileId: authenticatedUser.id,
+    });
+    setIsMemberLinkLoading(false);
+
+    if (!result.ok || !result.data) {
+      console.error(result.message);
+      setMemberLinkMessage(result.message);
+      return;
+    }
+
+    const mappedMember = mapTeamMemberRowsToTeamMembers([result.data])[0];
+    setCurrentMember(mappedMember);
+    setMembers((current) =>
+      current.map((member) => (member.id === mappedMember.id ? mappedMember : member)),
+    );
+    setUnlinkedMemberRows((current) => current.filter((member) => member.id !== memberId));
+    setMemberLinkMessage("내 팀원 정보 연결이 완료되었습니다.");
+    setIsMemberLinkSheetOpen(false);
+  };
+
+  const handleCreateLinkedMember = async () => {
+    if (!authenticatedUser?.id || !hasPersistentProjectId) {
+      return;
+    }
+
+    const joiningName = userNickname || authenticatedUser.email?.split("@")[0] || "팀원";
+    setIsMemberLinkLoading(true);
+    const result = await createAndLinkTeamMember({
+      teamId: project.id,
+      profileId: authenticatedUser.id,
+      name: joiningName,
+      role: "팀원",
+      skillTag: SKILL_POOL[0],
+    });
+    setIsMemberLinkLoading(false);
+
+    if (!result.ok || !result.data) {
+      console.error(result.message);
+      setMemberLinkMessage(result.message);
+      return;
+    }
+
+    const mappedMember = mapTeamMemberRowsToTeamMembers([result.data])[0];
+    setCurrentMember(mappedMember);
+    setMembers((current) => [...current, mappedMember]);
+    setMemberLinkMessage("새 팀원으로 참여 연결이 완료되었습니다.");
+    setIsMemberLinkSheetOpen(false);
   };
 
   const createWorkspaceFromForm = async (input: {
@@ -347,35 +696,69 @@ export function CarryMateApp() {
     endDate: string;
   }) => {
     const deadlineLabel = formatDeadlineLabel(input.endDate);
+    const generatedInviteCode = generateInviteCode();
+    const creatorName =
+      authenticatedUser && (userNickname || authenticatedUser.email?.split("@")[0])
+        ? userNickname || authenticatedUser.email?.split("@")[0] || "팀장"
+        : null;
 
     // 새 팀 생성은 백엔드가 없는 MVP이므로
     // 입력값을 현재 화면 상태에 즉시 반영하는 방식으로 시뮬레이션한다.
-    const names = input.memberNames
+    const inputNames = input.memberNames
       .split(",")
       .map((name) => name.trim())
       .filter(Boolean);
-    const normalizedMemberNames = names.length > 0 ? names : ["팀장"];
+    const inviteeNames = creatorName
+      ? dedupeMemberNames(
+          inputNames.filter(
+            (name) => normalizeMemberNameKey(name) !== normalizeMemberNameKey(creatorName),
+          ),
+        )
+      : dedupeMemberNames(inputNames);
 
-    const nextMembers: TeamMember[] =
-      names.length > 0
-        ? names.map((name, index) => ({
-            id: `member-${Date.now()}-${index}`,
+    const allMemberNames = creatorName
+      ? [creatorName, ...inviteeNames]
+      : inviteeNames.length > 0
+        ? inviteeNames
+        : ["팀장"];
+
+    const nextMembers: TeamMember[] = allMemberNames.map((name, index) => ({
+      id: `member-${Date.now()}-${index}`,
+      name,
+      role: index === 0 ? ROLE_POOL[0] : ROLE_POOL[(index % (ROLE_POOL.length - 1)) + 1],
+      skillTag: SKILL_POOL[index % SKILL_POOL.length],
+      isLeader: index === 0,
+      availability: DEFAULT_AVAILABILITY,
+      status: "active" as const,
+    }));
+
+    const teamMemberSeeds: CreateTeamMemberSeed[] = creatorName
+      ? [
+          {
+            profileId: authenticatedUser?.id ?? null,
+            name: creatorName,
+            role: "팀장 / 발표 정리",
+            skillTag: SKILL_POOL[0],
+            isLeader: true,
+            status: "active",
+          },
+          ...inviteeNames.map((name, index) => ({
+            profileId: null,
             name,
-            role: ROLE_POOL[index % ROLE_POOL.length],
-            skillTag: SKILL_POOL[index % SKILL_POOL.length],
-            availability: DEFAULT_AVAILABILITY,
-            status: "active" as const,
-          }))
-        : [
-            {
-              id: `member-${Date.now()}-0`,
-              name: "팀장",
-              role: ROLE_POOL[0],
-              skillTag: SKILL_POOL[0],
-              availability: DEFAULT_AVAILABILITY,
-              status: "active" as const,
-            },
-          ];
+            role: "팀원",
+            skillTag: SKILL_POOL[(index + 1) % SKILL_POOL.length],
+            isLeader: false,
+            status: "active",
+          })),
+        ]
+      : allMemberNames.map((name, index) => ({
+          profileId: null,
+          name,
+          role: index === 0 ? "팀장 / 발표 정리" : "팀원",
+          skillTag: SKILL_POOL[index % SKILL_POOL.length],
+          isLeader: index === 0,
+          status: "active",
+        }));
 
     const [leader, secondMember, thirdMember] = nextMembers;
     const nextProject: Project = {
@@ -383,6 +766,7 @@ export function CarryMateApp() {
       name: input.teamName,
       courseName: input.courseName,
       deadlineLabel,
+      inviteCode: generatedInviteCode,
       description: input.description.trim() || undefined,
       startDate: input.startDate.trim() || undefined,
       endDate: input.endDate.trim() || undefined,
@@ -423,8 +807,9 @@ export function CarryMateApp() {
     const saveResult = await saveTeamToSupabase({
       teamName: input.teamName.trim(),
       courseName: input.courseName.trim(),
+      inviteCode: generatedInviteCode,
       deadlineLabel,
-      memberNames: names,
+      memberNames: allMemberNames,
       description: input.description,
       startDate: input.startDate,
       endDate: input.endDate,
@@ -441,7 +826,7 @@ export function CarryMateApp() {
     if (saveResult.team?.id) {
       const memberCreateResult = await createTeamMembers(
         saveResult.team.id,
-        normalizedMemberNames,
+        teamMemberSeeds,
       );
 
       if (!memberCreateResult.ok || !memberCreateResult.data) {
@@ -454,6 +839,11 @@ export function CarryMateApp() {
           ...task,
           assigneeId: createdMembers[Math.min(index, createdMembers.length - 1)]?.id ?? null,
         }));
+        setCurrentMember(
+          authenticatedUser?.id
+            ? createdMembers.find((member) => member.isLeader) ?? null
+            : null,
+        );
         setMemberSyncMessage("");
       }
     }
@@ -461,6 +851,7 @@ export function CarryMateApp() {
     setProject({
       ...nextProject,
       id: saveResult.team?.id ?? nextProject.id,
+      inviteCode: saveResult.team?.invite_code ?? generatedInviteCode,
     });
     setMembers(createdMembers);
     setTasks(starterTasks);
@@ -817,6 +1208,7 @@ export function CarryMateApp() {
           onClose={() => setOnboardingSheetMode(null)}
           onSubmit={createWorkspaceFromForm}
           submitMessage={teamSaveMessage}
+          creatorName={authenticatedUser ? userNickname || authenticatedUser.email?.split("@")[0] || "" : ""}
         />
       );
     }
@@ -856,13 +1248,17 @@ export function CarryMateApp() {
       return (
         <ShareInviteModal
           copyFeedback={copyFeedback}
+          inviteCode={inviteCode || DEMO_INVITE_CODE}
+          inviteLink={inviteLink || buildInviteLink(DEMO_INVITE_CODE)}
           noticeMessage={teamSaveMessage}
           onClose={() => {
             setOnboardingSheetMode(null);
             setViewMode("workspace");
             setTeamSaveMessage("");
           }}
-          onCopy={() => setCopyFeedback("초대 정보 복사 완료!")}
+          onCopy={() => {
+            void handleCopyInviteInfo();
+          }}
         />
       );
     }
@@ -870,10 +1266,49 @@ export function CarryMateApp() {
     return null;
   };
 
+  const renderMemberLinkSheet = () => {
+    if (!isMemberLinkSheetOpen) {
+      return null;
+    }
+
+    return (
+      <MemberLinkSheet
+        creatorName={userNickname || authenticatedUser?.email?.split("@")[0] || "팀원"}
+        isLoading={isMemberLinkLoading}
+        members={unlinkedMemberRows}
+        message={memberLinkMessage}
+        onClose={closeMemberLinkSheet}
+        onClaim={handleClaimMember}
+        onCreateNew={handleCreateLinkedMember}
+      />
+    );
+  };
+
+  const renderAuthSheet = () => {
+    if (!isAuthSheetOpen) {
+      return null;
+    }
+
+    return (
+      <AuthSheet
+        mode={authMode}
+        message={authMessage}
+        isSubmitting={isAuthSubmitting}
+        onClose={closeAuthSheet}
+        onChangeMode={setAuthMode}
+        onSignIn={handleSignIn}
+        onSignUp={handleSignUp}
+      />
+    );
+  };
+
   if (viewMode === "onboarding") {
     return (
       <>
         <OnboardingScreen
+          authLoading={authLoading}
+          isAuthenticated={isAuthenticated}
+          userLabel={userNickname || authenticatedUser?.email || ""}
           onCreateTeam={() => {
             setTeamSaveMessage("");
             setOnboardingSheetMode("createTeam");
@@ -884,9 +1319,13 @@ export function CarryMateApp() {
           }}
           onJoinLink={() => setOnboardingSheetMode("joinLink")}
           onJoinQr={() => setOnboardingSheetMode("joinQr")}
+          onOpenAuthSignIn={() => openAuthSheet("signIn")}
+          onOpenAuthSignUp={() => openAuthSheet("signUp")}
+          onSignOut={handleSignOut}
           onTryDemo={loadDemoWorkspace}
         />
         {renderOnboardingSheet()}
+        {renderAuthSheet()}
       </>
     );
   }
@@ -904,23 +1343,85 @@ export function CarryMateApp() {
               <p className="mt-1 text-[13px] text-muted">
                 {project.courseName} · {project.deadlineLabel}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {authLoading ? (
+                  <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+                    계정 확인 중
+                  </span>
+                ) : isAuthenticated ? (
+                  <>
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-brand">
+                      {userNickname || authenticatedUser?.email}
+                    </span>
+                    <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+                      {isTeamLeader
+                        ? "팀장 연결됨"
+                        : isTeamMember
+                          ? "팀원 연결됨"
+                          : "팀원 연결 대기"}
+                    </span>
+                    {!isTeamMember && hasPersistentProjectId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void openMemberLinkSheet();
+                        }}
+                        className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+                      >
+                        내 팀원 정보 연결
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openAuthSheet("signIn")}
+                    className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+                  >
+                    로그인 / 회원가입
+                  </button>
+                )}
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                openSheet(
-                  activeTab === "tasks"
-                    ? "task"
-                    : activeTab === "schedule"
-                      ? "schedule"
-                      : "file",
-                )
-              }
-              className="rounded-2xl bg-brand px-4 py-3 text-[13px] font-semibold text-white shadow-brand"
-            >
-              빠른 추가
-            </button>
+            <div className="flex flex-col items-end gap-2">
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-muted"
+                >
+                  로그아웃
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={openInviteModal}
+                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+              >
+                팀원 초대
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  openSheet(
+                    activeTab === "tasks"
+                      ? "task"
+                      : activeTab === "schedule"
+                        ? "schedule"
+                        : "file",
+                  )
+                }
+                className="rounded-2xl bg-brand px-4 py-3 text-[13px] font-semibold text-white shadow-brand"
+              >
+                빠른 추가
+              </button>
+            </div>
           </div>
+          {authMessage ? (
+            <p className="mt-3 rounded-2xl bg-canvas px-4 py-3 text-[12px] font-medium text-muted">
+              {authMessage}
+            </p>
+          ) : null}
           {taskSyncMessage ? (
             <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[12px] font-medium text-warning">
               {taskSyncMessage}
@@ -929,6 +1430,11 @@ export function CarryMateApp() {
           {memberSyncMessage ? (
             <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[12px] font-medium text-warning">
               {memberSyncMessage}
+            </p>
+          ) : null}
+          {memberLinkMessage && !isMemberLinkSheetOpen ? (
+            <p className="mt-3 rounded-2xl bg-canvas px-4 py-3 text-[12px] font-medium text-muted">
+              {memberLinkMessage}
             </p>
           ) : null}
         </div>
@@ -978,6 +1484,20 @@ export function CarryMateApp() {
       </main>
 
       {renderWorkspaceSheet()}
+      {isInviteModalOpen ? (
+        <ShareInviteModal
+          copyFeedback={copyFeedback}
+          inviteCode={inviteCode || DEMO_INVITE_CODE}
+          inviteLink={inviteLink || buildInviteLink(DEMO_INVITE_CODE)}
+          noticeMessage=""
+          onClose={closeInviteModal}
+          onCopy={() => {
+            void handleCopyInviteInfo();
+          }}
+        />
+      ) : null}
+      {renderMemberLinkSheet()}
+      {renderAuthSheet()}
       {pendingExitMember ? (
         <ConfirmModal
           memberName={pendingExitMember.name}
@@ -990,16 +1510,28 @@ export function CarryMateApp() {
 }
 
 function OnboardingScreen({
+  authLoading,
+  isAuthenticated,
+  userLabel,
   onCreateTeam,
   onJoinCode,
   onJoinLink,
   onJoinQr,
+  onOpenAuthSignIn,
+  onOpenAuthSignUp,
+  onSignOut,
   onTryDemo,
 }: {
+  authLoading: boolean;
+  isAuthenticated: boolean;
+  userLabel: string;
   onCreateTeam: () => void;
   onJoinCode: () => void;
   onJoinLink: () => void;
   onJoinQr: () => void;
+  onOpenAuthSignIn: () => void;
+  onOpenAuthSignUp: () => void;
+  onSignOut: () => void;
   onTryDemo: () => void;
 }) {
   return (
@@ -1013,6 +1545,51 @@ function OnboardingScreen({
           <p className="mt-3 text-[15px] leading-7 text-muted">
             신입생 팀플을 더 쉽게 정리하는 AI 협업 도우미
           </p>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-line bg-canvas px-4 py-3">
+          {authLoading ? (
+            <p className="text-[13px] font-medium text-muted">계정 상태를 확인하고 있어요.</p>
+          ) : isAuthenticated ? (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[12px] font-semibold text-brand">로그인됨</p>
+                <p className="mt-1 text-[13px] text-ink">{userLabel}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-full border border-line bg-white px-3 py-2 text-[12px] font-semibold text-muted"
+              >
+                로그아웃
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[12px] font-semibold text-brand">선택 로그인</p>
+                <p className="mt-1 text-[13px] leading-6 text-muted">
+                  로그인 없이 데모와 팀 참여는 그대로 사용할 수 있어요.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenAuthSignIn}
+                  className="rounded-full border border-line bg-white px-3 py-2 text-[12px] font-semibold text-ink"
+                >
+                  로그인
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAuthSignUp}
+                  className="rounded-full bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                >
+                  회원가입
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-7 space-y-3">
@@ -1057,6 +1634,138 @@ function OnboardingScreen({
         </div>
       </section>
     </main>
+  );
+}
+
+function AuthSheet({
+  mode,
+  message,
+  isSubmitting,
+  onClose,
+  onChangeMode,
+  onSignIn,
+  onSignUp,
+}: {
+  mode: AuthMode;
+  message: string;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onChangeMode: (mode: AuthMode) => void;
+  onSignIn: (input: { email: string; password: string }) => Promise<boolean>;
+  onSignUp: (input: {
+    email: string;
+    password: string;
+    nickname: string;
+  }) => Promise<boolean>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [localMessage, setLocalMessage] = useState("");
+
+  return (
+    <SheetShell title={mode === "signIn" ? "로그인" : "회원가입"} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-canvas p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setLocalMessage("");
+            onChangeMode("signIn");
+          }}
+          className={`rounded-2xl px-4 py-3 text-sm font-semibold ${
+            mode === "signIn" ? "bg-white text-ink shadow-soft" : "text-muted"
+          }`}
+        >
+          로그인
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setLocalMessage("");
+            onChangeMode("signUp");
+          }}
+          className={`rounded-2xl px-4 py-3 text-sm font-semibold ${
+            mode === "signUp" ? "bg-white text-ink shadow-soft" : "text-muted"
+          }`}
+        >
+          회원가입
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        <SheetInput
+          label="이메일"
+          type="email"
+          value={email}
+          onChange={setEmail}
+          placeholder="예: carrymate@example.com"
+        />
+        <SheetInput
+          label="비밀번호"
+          type="password"
+          value={password}
+          onChange={setPassword}
+          placeholder="6자 이상 입력해 주세요"
+        />
+        {mode === "signUp" ? (
+          <SheetInput
+            label="닉네임 (선택)"
+            value={nickname}
+            onChange={setNickname}
+            placeholder="예: 민지"
+          />
+        ) : null}
+      </div>
+
+      {localMessage || message ? (
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+          {localMessage || message}
+        </p>
+      ) : null}
+
+      <PrimaryButton
+        label={
+          isSubmitting
+            ? mode === "signIn"
+              ? "로그인 중..."
+              : "가입 중..."
+            : mode === "signIn"
+              ? "로그인"
+              : "회원가입"
+        }
+        onClick={async () => {
+          if (isSubmitting) {
+            return;
+          }
+
+          if (!email.trim() || !password.trim()) {
+            setLocalMessage("이메일과 비밀번호를 모두 입력해 주세요.");
+            return;
+          }
+
+          if (password.trim().length < 6) {
+            setLocalMessage("비밀번호는 6자 이상 입력해 주세요.");
+            return;
+          }
+
+          setLocalMessage("");
+
+          if (mode === "signIn") {
+            await onSignIn({
+              email,
+              password,
+            });
+            return;
+          }
+
+          await onSignUp({
+            email,
+            password,
+            nickname,
+          });
+        }}
+      />
+    </SheetShell>
   );
 }
 
@@ -1140,11 +1849,15 @@ function QrScannerModal({
 
 function ShareInviteModal({
   copyFeedback,
+  inviteCode,
+  inviteLink,
   noticeMessage,
   onCopy,
   onClose,
 }: {
   copyFeedback: string;
+  inviteCode: string;
+  inviteLink: string;
   noticeMessage: string;
   onCopy: () => void;
   onClose: () => void;
@@ -1168,11 +1881,11 @@ function ShareInviteModal({
         </div>
 
         <div className="mt-4 space-y-3">
-          <InviteInfoCard label="초대 코드" value="CARRY2026" />
-          <InviteInfoCard label="초대 링크" value="carrymate.app/join/CARRY2026" />
+          <InviteInfoCard label="초대 코드" value={inviteCode} />
+          <InviteInfoCard label="초대 링크" value={inviteLink} />
           <div className="rounded-2xl border border-line bg-canvas p-4">
-            <p className="text-[13px] font-semibold text-ink">가짜 QR 코드</p>
-            <FakeQrCode />
+            <p className="text-[13px] font-semibold text-ink">초대 QR</p>
+            <FakeQrCode value={inviteLink} />
           </div>
         </div>
 
@@ -1203,11 +1916,79 @@ function ShareInviteModal({
   );
 }
 
+function MemberLinkSheet({
+  creatorName,
+  isLoading,
+  members,
+  message,
+  onClose,
+  onClaim,
+  onCreateNew,
+}: {
+  creatorName: string;
+  isLoading: boolean;
+  members: TeamMemberRow[];
+  message: string;
+  onClose: () => void;
+  onClaim: (memberId: string) => void;
+  onCreateNew: () => void;
+}) {
+  return (
+    <SheetShell title="내 팀원 정보 연결" onClose={onClose}>
+      <p className="text-sm leading-6 text-muted">
+        이름이 같다는 이유만으로 자동 연결하지 않습니다. 아래 미연결 팀원 중 내 항목을 선택하거나, 없으면 새 팀원으로 참여해 주세요.
+      </p>
+      <div className="space-y-3">
+        {members.length > 0 ? (
+          members.map((member) => (
+            <button
+              key={member.id}
+              type="button"
+              disabled={isLoading}
+              onClick={() => onClaim(member.id)}
+              className="flex w-full items-center justify-between rounded-2xl border border-line bg-white px-4 py-4 text-left shadow-soft disabled:opacity-60"
+            >
+              <div>
+                <p className="text-sm font-semibold text-ink">{member.name}</p>
+                <p className="mt-1 text-[12px] text-muted">
+                  {member.role} · {member.skill_tag}
+                </p>
+              </div>
+              <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+                선택
+              </span>
+            </button>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-line bg-canvas px-4 py-4 text-sm leading-6 text-muted">
+            아직 연결 가능한 초대 대상 팀원이 없습니다. 내 이름으로 새 팀원 참여를 만들 수 있어요.
+          </div>
+        )}
+      </div>
+      {message ? (
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+          {message}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        disabled={isLoading}
+        onClick={onCreateNew}
+        className="w-full rounded-2xl border border-line bg-white px-4 py-4 text-sm font-semibold text-ink shadow-soft disabled:opacity-60"
+      >
+        {isLoading ? "연결 중..." : `${creatorName} 이름으로 새 팀원 참여`}
+      </button>
+    </SheetShell>
+  );
+}
+
 function CreateTeamSheet({
+  creatorName,
   onClose,
   onSubmit,
   submitMessage,
 }: {
+  creatorName: string;
   onClose: () => void;
   onSubmit: (input: {
     teamName: string;
@@ -1231,6 +2012,14 @@ function CreateTeamSheet({
 
   return (
     <SheetShell title="새 팀 만들기" onClose={onClose}>
+      {creatorName ? (
+        <div className="rounded-2xl border border-line bg-canvas px-4 py-3">
+          <p className="text-[12px] font-semibold text-brand">로그인 팀장 자동 추가</p>
+          <p className="mt-1 text-[13px] leading-6 text-muted">
+            {creatorName}님은 자동으로 팀장으로 추가됩니다. 아래에는 초대할 팀원 이름만 입력해 주세요.
+          </p>
+        </div>
+      ) : null}
       <div className="space-y-3">
         <SheetInput
           label="팀명"
@@ -1265,7 +2054,7 @@ function CreateTeamSheet({
           placeholder=""
         />
         <SheetInput
-          label="초기 팀원 이름"
+          label={creatorName ? "초대할 팀원 이름" : "초기 팀원 이름"}
           value={memberNames}
           onChange={setMemberNames}
           placeholder="예: 민지, 준호, 서연"
@@ -1518,10 +2307,10 @@ function SheetInput({
   placeholder,
 }: {
   label: string;
-  type?: "text" | "date";
+  type?: "text" | "date" | "email" | "password";
   value: string;
   onChange: (value: string) => void;
-  placeholder: string;
+  placeholder?: string;
 }) {
   return (
     <label className="block">
@@ -1572,17 +2361,11 @@ function InviteInfoCard({
   );
 }
 
-function FakeQrCode() {
-  const cells = [
-    1, 1, 1, 0, 1, 0, 1, 1,
-    1, 0, 1, 0, 0, 1, 0, 1,
-    1, 1, 1, 0, 1, 1, 1, 1,
-    0, 0, 0, 1, 0, 0, 1, 0,
-    1, 1, 0, 1, 1, 0, 1, 1,
-    0, 1, 0, 0, 1, 0, 0, 1,
-    1, 1, 1, 0, 1, 1, 0, 1,
-    1, 0, 1, 0, 0, 1, 1, 1,
-  ];
+function FakeQrCode({ value }: { value: string }) {
+  const cells = Array.from({ length: 64 }, (_, index) => {
+    const sourceChar = value.charCodeAt(index % Math.max(value.length, 1)) || 0;
+    return (sourceChar + index * 7) % 3 === 0 ? 1 : 0;
+  });
 
   return (
     <div className="mt-3 flex justify-center">
