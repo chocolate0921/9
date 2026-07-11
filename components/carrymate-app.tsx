@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
@@ -7,6 +7,7 @@ import { HomeTab } from "@/components/home-tab";
 import { ScheduleTab } from "@/components/schedule-tab";
 import { TaskTab } from "@/components/task-tab";
 import { getDemoWorkspace } from "@/data/carrymate";
+import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
 import { saveTeamToSupabase } from "@/lib/supabase/teams";
 import {
   ConfirmedMeeting,
@@ -165,9 +166,13 @@ export function CarryMateApp() {
   const createWorkspaceFromForm = async (input: {
     teamName: string;
     courseName: string;
-    deadline: string;
     memberNames: string;
+    description: string;
+    startDate: string;
+    endDate: string;
   }) => {
+    const deadlineLabel = formatDeadlineLabel(input.endDate);
+
     // 새 팀 생성은 백엔드가 없는 MVP이므로
     // 입력값을 현재 화면 상태에 즉시 반영하는 방식으로 시뮬레이션한다.
     const names = input.memberNames
@@ -201,7 +206,10 @@ export function CarryMateApp() {
       id: `project-${Date.now()}`,
       name: input.teamName,
       courseName: input.courseName,
-      deadlineLabel: input.deadline,
+      deadlineLabel,
+      description: input.description.trim() || undefined,
+      startDate: input.startDate.trim() || undefined,
+      endDate: input.endDate.trim() || undefined,
     };
 
     const starterTasks: Task[] = [
@@ -236,8 +244,11 @@ export function CarryMateApp() {
     const saveResult = await saveTeamToSupabase({
       teamName: input.teamName.trim(),
       courseName: input.courseName.trim(),
-      deadlineLabel: input.deadline.trim(),
+      deadlineLabel,
       memberNames: names,
+      description: input.description,
+      startDate: input.startDate,
+      endDate: input.endDate,
     });
 
     if (!saveResult.ok) {
@@ -898,16 +909,20 @@ function CreateTeamSheet({
   onSubmit: (input: {
     teamName: string;
     courseName: string;
-    deadline: string;
     memberNames: string;
+    description: string;
+    startDate: string;
+    endDate: string;
   }) => Promise<boolean>;
   submitMessage: string;
 }) {
   // TODO: Supabase 연동 시 이 폼 상태는 react-hook-form + 서버 submit 로직으로 대체 가능
   const [teamName, setTeamName] = useState("");
   const [courseName, setCourseName] = useState("");
-  const [deadline, setDeadline] = useState("");
   const [memberNames, setMemberNames] = useState("");
+  const [description, setDescription] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localMessage, setLocalMessage] = useState("");
 
@@ -927,10 +942,24 @@ function CreateTeamSheet({
           placeholder="예: 인간컴퓨터상호작용"
         />
         <SheetInput
-          label="마감일"
-          value={deadline}
-          onChange={setDeadline}
-          placeholder="예: 7월 12일 발표"
+          label="프로젝트 설명 (선택)"
+          value={description}
+          onChange={setDescription}
+          placeholder="예: 발표 준비 목표를 간단히 적어주세요"
+        />
+        <SheetInput
+          label="프로젝트 시작일 (선택)"
+          type="date"
+          value={startDate}
+          onChange={setStartDate}
+          placeholder=""
+        />
+        <SheetInput
+          label="프로젝트 마감일"
+          type="date"
+          value={endDate}
+          onChange={setEndDate}
+          placeholder=""
         />
         <SheetInput
           label="초기 팀원 이름"
@@ -950,13 +979,24 @@ function CreateTeamSheet({
           if (isSubmitting) {
             return;
           }
-          if (!teamName.trim() || !courseName.trim() || !deadline.trim()) {
-            setLocalMessage("팀명, 과목명, 마감일을 모두 입력해 주세요.");
+          if (!teamName.trim() || !courseName.trim() || !endDate.trim()) {
+            setLocalMessage("팀명, 과목명, 프로젝트 마감일을 모두 입력해 주세요.");
+            return;
+          }
+          if (startDate && startDate > endDate) {
+            setLocalMessage("프로젝트 마감일은 시작일보다 빠를 수 없어요.");
             return;
           }
           setLocalMessage("");
           setIsSubmitting(true);
-          const ok = await onSubmit({ teamName, courseName, deadline, memberNames });
+          const ok = await onSubmit({
+            teamName,
+            courseName,
+            memberNames,
+            description,
+            startDate,
+            endDate,
+          });
           if (!ok) {
             setLocalMessage(
               "Supabase 저장에 실패했습니다. 환경변수와 teams 테이블 정책을 확인해 주세요.",
@@ -1169,11 +1209,13 @@ function SheetShell({
 
 function SheetInput({
   label,
+  type = "text",
   value,
   onChange,
   placeholder,
 }: {
   label: string;
+  type?: "text" | "date";
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
@@ -1182,6 +1224,7 @@ function SheetInput({
     <label className="block">
       <span className="mb-2 block text-[13px] font-semibold text-ink">{label}</span>
       <input
+        type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -1255,3 +1298,4 @@ function FakeQrCode() {
 function Corner({ className }: { className: string }) {
   return <span className={`absolute h-8 w-8 border-brand ${className}`} />;
 }
+

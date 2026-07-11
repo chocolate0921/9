@@ -10,6 +10,9 @@ export type Project = {
   name: string;
   courseName: string;
   deadlineLabel: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
 };
 
 export type TeamMember = {

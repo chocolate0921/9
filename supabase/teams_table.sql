@@ -10,6 +10,15 @@ create table if not exists public.teams (
   created_at timestamptz not null default now()
 );
 
+alter table public.teams
+add column if not exists description text;
+
+alter table public.teams
+add column if not exists start_date date default current_date;
+
+alter table public.teams
+add column if not exists end_date date;
+
 create index if not exists teams_created_at_idx on public.teams (created_at desc);
 
 alter table public.teams enable row level security;
