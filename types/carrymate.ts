@@ -27,11 +27,14 @@ export type TeamMember = {
 export type Task = {
   id: string;
   title: string;
+  description?: string;
   assigneeId: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   dueLabel: string;
+  dueAt?: string | null;
   aiSuggestedRole?: string;
+  completedAt?: string | null;
 };
 
 export type ScheduleSlot = {

@@ -2,12 +2,16 @@ import { useState } from "react";
 import { ConfirmedMeeting, Task } from "@/types/carrymate";
 
 type Summary = {
+  totalCount: number;
   todayTaskCount: number;
+  todoCount: number;
   inProgressCount: number;
   doneCount: number;
+  overdueCount: number;
   unassignedCount: number;
   urgentTask?: Task;
   progress: number;
+  healthScore: number;
   healthStatus: "safe" | "warning" | "risk";
   briefing: string;
 };

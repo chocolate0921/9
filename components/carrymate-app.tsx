@@ -1,13 +1,23 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
 import { ScheduleTab } from "@/components/schedule-tab";
 import { TaskTab } from "@/components/task-tab";
 import { getDemoWorkspace } from "@/data/carrymate";
+import {
+  formatTaskDueLabel,
+  isUuid,
+  mapTaskRowsToTasks,
+} from "@/lib/mappers/carrymate";
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
+import {
+  createTask,
+  getTasksByTeam,
+  updateTaskFields,
+} from "@/lib/supabase/tasks";
 import { saveTeamToSupabase } from "@/lib/supabase/teams";
 import {
   ConfirmedMeeting,
@@ -33,12 +43,16 @@ type OnboardingSheetMode =
   | null;
 
 type ProjectSummary = {
+  totalCount: number;
   todayTaskCount: number;
+  todoCount: number;
   inProgressCount: number;
   doneCount: number;
+  overdueCount: number;
   unassignedCount: number;
   urgentTask?: Task;
   progress: number;
+  healthScore: number;
   healthStatus: HealthStatus;
   briefing: string;
 };
@@ -46,6 +60,29 @@ type ProjectSummary = {
 const DEFAULT_AVAILABILITY = ["수 18:00", "목 14:00", "목 19:00"];
 const ROLE_POOL = ["팀장 / 진행 정리", "자료 조사", "디자인", "문서 작성"];
 const SKILL_POOL = ["정리형", "리서치형", "비주얼형", "문서형"];
+
+function getTaskDueAt(daysFromToday: number, hour = 18) {
+  const date = new Date();
+  date.setHours(hour, 0, 0, 0);
+  date.setDate(date.getDate() + daysFromToday);
+  return date.toISOString();
+}
+
+function getEffectiveDueAt(task: Task) {
+  if (task.dueAt) {
+    return task.dueAt;
+  }
+
+  if (task.dueLabel === "오늘") {
+    return getTaskDueAt(0, 18);
+  }
+
+  if (task.dueLabel === "내일") {
+    return getTaskDueAt(1, 18);
+  }
+
+  return null;
+}
 
 export function CarryMateApp() {
   // TODO: Supabase Auth/Router 연동 시 온보딩 여부와 현재 탭 상태는
@@ -65,6 +102,10 @@ export function CarryMateApp() {
     () => getDemoWorkspace().meetings,
   );
   const [files, setFiles] = useState<FileItem[]>(() => getDemoWorkspace().files);
+  const [taskSyncMessage, setTaskSyncMessage] = useState("");
+  const [isTaskCreating, setIsTaskCreating] = useState(false);
+  const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
+  const tasksRef = useRef(tasks);
 
   // TODO: Supabase 연동 시 아래 UI 상태들은 서버 저장 대상이 아니라
   // 클라이언트 전용 로컬 UI 상태로 그대로 유지하거나 zustand/router state로 분리 가능
@@ -84,52 +125,134 @@ export function CarryMateApp() {
     () => members.filter((member) => member.status === "active"),
     [members],
   );
+  const hasPersistentProjectId = isUuid(project.id);
+
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!hasPersistentProjectId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadTasks = async () => {
+      const result = await getTasksByTeam(project.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.ok || !result.data) {
+        console.error(result.message);
+        setTaskSyncMessage(result.message);
+        return;
+      }
+
+      if (
+        result.data.length === 0 &&
+        tasksRef.current.some((task) => !isUuid(task.id))
+      ) {
+        setTaskSyncMessage("");
+        return;
+      }
+
+      setTasks(mapTaskRowsToTasks(result.data));
+      setTaskSyncMessage("");
+    };
+
+    void loadTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPersistentProjectId, project.id]);
 
   // 파생 요약 값은 여러 카드가 동시에 참조하므로
   // 렌더마다 직접 계산하지 않고 한 곳에서 일관되게 계산한다.
   const summary = useMemo<ProjectSummary>(() => {
-    const todayTaskCount = tasks.filter(
-      (task) => task.dueLabel === "오늘" && task.status !== "done",
-    ).length;
-    const inProgressCount = tasks.filter(
-      (task) => task.status === "inProgress",
-    ).length;
+    const now = new Date();
+    const totalCount = tasks.length;
+    const todayTaskCount = tasks.filter((task) => {
+      const effectiveDueAt = getEffectiveDueAt(task);
+      if (task.status === "done" || !effectiveDueAt) {
+        return false;
+      }
+
+      const dueDate = new Date(effectiveDueAt);
+      return (
+        dueDate.getFullYear() === now.getFullYear() &&
+        dueDate.getMonth() === now.getMonth() &&
+        dueDate.getDate() === now.getDate()
+      );
+    }).length;
+    const todoCount = tasks.filter((task) => task.status === "todo").length;
+    const inProgressCount = tasks.filter((task) => task.status === "inProgress").length;
     const doneCount = tasks.filter((task) => task.status === "done").length;
+    const overdueCount = tasks.filter((task) => {
+      const effectiveDueAt = getEffectiveDueAt(task);
+      if (task.status === "done" || !effectiveDueAt) {
+        return false;
+      }
+
+      return new Date(effectiveDueAt).getTime() < now.getTime();
+    }).length;
     const unassignedCount = tasks.filter((task) => task.assigneeId === null).length;
-    const progress = tasks.length === 0 ? 0 : Math.round((doneCount / tasks.length) * 100);
-    const urgentTask = tasks.find(
-      (task) =>
-        (task.dueLabel === "오늘" && task.status !== "done") || task.assigneeId === null,
-    );
+    const progress = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+    const urgentTask =
+      tasks.find(
+        (task) =>
+          task.status !== "done" &&
+          getEffectiveDueAt(task) &&
+          new Date(getEffectiveDueAt(task) as string).getTime() < now.getTime(),
+      ) ??
+      tasks.find((task) => task.status !== "done" && task.assigneeId === null) ??
+      tasks.find((task) => task.status !== "done");
+
+    let healthScore = 100;
+    healthScore -= overdueCount * 15;
+    healthScore -= unassignedCount * 10;
+    if (progress < 40) {
+      healthScore -= 20;
+    }
+    healthScore = Math.max(0, Math.min(100, healthScore));
 
     let healthStatus: HealthStatus = "safe";
-    if (unassignedCount > 0 || todayTaskCount >= 3 || progress < 55) {
+    if (healthScore < 50) {
       healthStatus = "risk";
-    } else if (todayTaskCount >= 1 || progress < 75) {
+    } else if (healthScore < 80) {
       healthStatus = "warning";
     }
 
     let briefing = "";
-    if (unassignedCount > 0) {
-      briefing =
-        "⚠️ 담당자가 지정되지 않은 업무가 있어요. 역할 재분배가 필요합니다.";
+    if (overdueCount > 0) {
+      briefing = `연체 업무가 ${overdueCount}개 있어요. 오늘 우선순위를 다시 정리해 주세요.`;
+    } else if (unassignedCount > 0) {
+      briefing = `담당자 미정 업무가 ${unassignedCount}개 있어요. 자동 재분배로 먼저 정리해 주세요.`;
+    } else if (progress < 40) {
+      briefing = "완료율이 아직 낮아요. 진행 중인 업무를 먼저 끝내면 팀 상태가 빠르게 안정됩니다.";
     } else {
       const briefingMap: Record<HealthStatus, string> = {
-        safe: "좋아요. 오늘은 발표 흐름만 마무리하면 팀 상태가 안정적이에요.",
-        warning:
-          "주의 단계예요. 오늘 안에 남은 핵심 업무를 1개 이상 완료하면 발표 준비가 훨씬 편해져요.",
-        risk: "위험 단계예요. 오늘 업무와 회의 시간을 먼저 정리해야 마감 직전 혼선을 줄일 수 있어요.",
+        safe: "좋아요. 현재 업무 진행이 안정적이에요. 남은 발표 흐름만 마무리하면 됩니다.",
+        warning: "주의 단계예요. 진행 중인 업무를 하나만 더 끝내도 전체 흐름이 훨씬 안정돼요.",
+        risk: "위험 단계예요. 연체나 미배정 업무부터 먼저 정리해야 발표 준비가 무너지지 않아요.",
       };
       briefing = briefingMap[healthStatus];
     }
 
     return {
+      totalCount,
       todayTaskCount,
+      todoCount,
       inProgressCount,
       doneCount,
+      overdueCount,
       unassignedCount,
       urgentTask,
       progress,
+      healthScore,
       healthStatus,
       briefing,
     };
@@ -160,6 +283,7 @@ export function CarryMateApp() {
     setInviteError("");
     setCopyFeedback("");
     setTeamSaveMessage("");
+    setTaskSyncMessage("");
     setPendingMemberExitId(null);
   };
 
@@ -220,6 +344,7 @@ export function CarryMateApp() {
         status: "todo",
         priority: "high",
         dueLabel: "오늘",
+        dueAt: getTaskDueAt(0, 18),
         aiSuggestedRole: "팀장이 먼저 정리하면 팀 흐름이 빨라져요.",
       },
       {
@@ -229,6 +354,7 @@ export function CarryMateApp() {
         status: "inProgress",
         priority: "medium",
         dueLabel: "오늘",
+        dueAt: getTaskDueAt(0, 20),
         aiSuggestedRole: "정리형 팀원이 맡으면 좋아요.",
       },
       {
@@ -238,6 +364,7 @@ export function CarryMateApp() {
         status: "todo",
         priority: "medium",
         dueLabel: "내일",
+        dueAt: getTaskDueAt(1, 15),
       },
     ];
 
@@ -256,7 +383,10 @@ export function CarryMateApp() {
       return false;
     }
 
-    setProject(nextProject);
+    setProject({
+      ...nextProject,
+      id: saveResult.team?.id ?? nextProject.id,
+    });
     setMembers(nextMembers);
     setTasks(starterTasks);
     setScheduleSlots([]);
@@ -268,6 +398,7 @@ export function CarryMateApp() {
     setInviteError("");
     setCopyFeedback("");
     setTeamSaveMessage(saveResult.message);
+    setTaskSyncMessage("");
     return true;
   };
 
@@ -289,6 +420,7 @@ export function CarryMateApp() {
     // 새 업무 추가 시 현재 active 멤버 중 한 명에게 바로 배정해
     // 홈/업무 탭이 즉시 연결되어 보이도록 한다.
     const assignee = activeMembers[tasks.length % Math.max(activeMembers.length, 1)];
+    const dueAt = getTaskDueAt(0, 18);
     const nextTask: Task = {
       id: `task-${Date.now()}`,
       title,
@@ -296,6 +428,7 @@ export function CarryMateApp() {
       status: "todo",
       priority: "medium",
       dueLabel: "오늘",
+      dueAt,
       aiSuggestedRole: assignee
         ? `${assignee.name}(${assignee.skillTag})에게 추천`
         : "담당자를 정해 주세요.",
@@ -304,25 +437,110 @@ export function CarryMateApp() {
     setTasks((current) => [nextTask, ...current]);
     setActiveTab("tasks");
     closeSheet();
+
+    if (!hasPersistentProjectId || isTaskCreating) {
+      return;
+    }
+
+    setIsTaskCreating(true);
+
+    void (async () => {
+      const result = await createTask({
+        teamId: project.id,
+        title,
+        description: nextTask.description,
+        assigneeId: assignee?.id && isUuid(assignee.id) ? assignee.id : null,
+        status: "todo",
+        priority: "medium",
+        dueAt,
+        aiSuggestedRole: nextTask.aiSuggestedRole,
+      });
+
+      setIsTaskCreating(false);
+
+      if (!result.ok || !result.data) {
+        console.error(result.message);
+        setTaskSyncMessage(result.message);
+        return;
+      }
+
+      const [persistedTask] = mapTaskRowsToTasks([result.data]);
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === nextTask.id
+            ? {
+                ...persistedTask,
+                assigneeId: nextTask.assigneeId,
+              }
+            : task,
+        ),
+      );
+      setTaskSyncMessage("");
+    })();
   };
 
   const handleAdvanceTask = (taskId: string) => {
     // 업무 카드를 탭할 때마다 To Do -> In Progress -> Done 순으로 순환한다.
+    if (pendingTaskIds.includes(taskId)) {
+      return;
+    }
+
+    const currentTask = tasks.find((task) => task.id === taskId);
+    if (!currentTask) {
+      return;
+    }
+
+    const nextStatusMap: Record<TaskStatus, TaskStatus> = {
+      todo: "inProgress",
+      inProgress: "done",
+      done: "todo",
+    };
+
+    const nextStatus = nextStatusMap[currentTask.status];
+    const optimisticTask: Task = {
+      ...currentTask,
+      status: nextStatus,
+      completedAt: nextStatus === "done" ? new Date().toISOString() : null,
+      dueLabel: formatTaskDueLabel(currentTask.dueAt, nextStatus === "done" ? new Date().toISOString() : null),
+    };
+
     setTasks((current) =>
-      current.map((task) => {
-        if (task.id !== taskId) {
-          return task;
-        }
-
-        const nextStatusMap: Record<TaskStatus, TaskStatus> = {
-          todo: "inProgress",
-          inProgress: "done",
-          done: "todo",
-        };
-
-        return { ...task, status: nextStatusMap[task.status] };
-      }),
+      current.map((task) => (task.id === taskId ? optimisticTask : task)),
     );
+
+    if (!hasPersistentProjectId || !isUuid(taskId)) {
+      return;
+    }
+
+    setPendingTaskIds((current) => [...current, taskId]);
+
+    void (async () => {
+      const result = await updateTaskFields(taskId, { status: nextStatus });
+
+      setPendingTaskIds((current) => current.filter((id) => id !== taskId));
+
+      if (!result.ok || !result.data) {
+        console.error(result.message);
+        setTaskSyncMessage(result.message);
+        setTasks((current) =>
+          current.map((task) => (task.id === taskId ? currentTask : task)),
+        );
+        return;
+      }
+
+      const [persistedTask] = mapTaskRowsToTasks([result.data]);
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? {
+                ...persistedTask,
+                assigneeId: currentTask.assigneeId,
+              }
+            : task,
+        ),
+      );
+      setTaskSyncMessage("");
+    })();
   };
 
   const handleAddSchedule = (title: string) => {
@@ -628,6 +846,11 @@ export function CarryMateApp() {
               빠른 추가
             </button>
           </div>
+          {taskSyncMessage ? (
+            <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[12px] font-medium text-warning">
+              {taskSyncMessage}
+            </p>
+          ) : null}
         </div>
 
         <section className="flex-1 space-y-4">
