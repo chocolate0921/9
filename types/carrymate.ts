@@ -20,6 +20,7 @@ export type TeamMember = {
   name: string;
   role: string;
   skillTag: string;
+  isLeader?: boolean;
   availability: string[];
   status: "active" | "former";
 };

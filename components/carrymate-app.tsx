@@ -11,6 +11,7 @@ import {
   formatTaskDueLabel,
   isUuid,
   mapTaskRowsToTasks,
+  mapTeamMemberRowsToTeamMembers,
 } from "@/lib/mappers/carrymate";
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
 import {
@@ -18,6 +19,10 @@ import {
   getTasksByTeam,
   updateTaskFields,
 } from "@/lib/supabase/tasks";
+import {
+  createTeamMembers,
+  getTeamMembersByTeam,
+} from "@/lib/supabase/team-members";
 import { saveTeamToSupabase } from "@/lib/supabase/teams";
 import {
   ConfirmedMeeting,
@@ -103,9 +108,11 @@ export function CarryMateApp() {
   );
   const [files, setFiles] = useState<FileItem[]>(() => getDemoWorkspace().files);
   const [taskSyncMessage, setTaskSyncMessage] = useState("");
+  const [memberSyncMessage, setMemberSyncMessage] = useState("");
   const [isTaskCreating, setIsTaskCreating] = useState(false);
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
   const tasksRef = useRef(tasks);
+  const membersRef = useRef(members);
 
   // TODO: Supabase 연동 시 아래 UI 상태들은 서버 저장 대상이 아니라
   // 클라이언트 전용 로컬 UI 상태로 그대로 유지하거나 zustand/router state로 분리 가능
@@ -130,6 +137,10 @@ export function CarryMateApp() {
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
+
+  useEffect(() => {
+    membersRef.current = members;
+  }, [members]);
 
   useEffect(() => {
     if (!hasPersistentProjectId) {
@@ -164,6 +175,45 @@ export function CarryMateApp() {
     };
 
     void loadTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPersistentProjectId, project.id]);
+
+  useEffect(() => {
+    if (!hasPersistentProjectId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMembers = async () => {
+      const result = await getTeamMembersByTeam(project.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.ok || !result.data) {
+        console.error(result.message);
+        setMemberSyncMessage(result.message);
+        return;
+      }
+
+      if (
+        result.data.length === 0 &&
+        membersRef.current.some((member) => !isUuid(member.id))
+      ) {
+        setMemberSyncMessage("");
+        return;
+      }
+
+      setMembers(mapTeamMemberRowsToTeamMembers(result.data));
+      setMemberSyncMessage("");
+    };
+
+    void loadMembers();
 
     return () => {
       cancelled = true;
@@ -284,6 +334,7 @@ export function CarryMateApp() {
     setCopyFeedback("");
     setTeamSaveMessage("");
     setTaskSyncMessage("");
+    setMemberSyncMessage("");
     setPendingMemberExitId(null);
   };
 
@@ -303,8 +354,9 @@ export function CarryMateApp() {
       .split(",")
       .map((name) => name.trim())
       .filter(Boolean);
+    const normalizedMemberNames = names.length > 0 ? names : ["팀장"];
 
-    const nextMembers =
+    const nextMembers: TeamMember[] =
       names.length > 0
         ? names.map((name, index) => ({
             id: `member-${Date.now()}-${index}`,
@@ -336,7 +388,7 @@ export function CarryMateApp() {
       endDate: input.endDate.trim() || undefined,
     };
 
-    const starterTasks: Task[] = [
+    let starterTasks: Task[] = [
       {
         id: `task-${Date.now()}-0`,
         title: "역할 분담 먼저 정리하기",
@@ -383,11 +435,34 @@ export function CarryMateApp() {
       return false;
     }
 
+    let createdMembers = nextMembers;
+    let nextSaveMessage = saveResult.message;
+
+    if (saveResult.team?.id) {
+      const memberCreateResult = await createTeamMembers(
+        saveResult.team.id,
+        normalizedMemberNames,
+      );
+
+      if (!memberCreateResult.ok || !memberCreateResult.data) {
+        console.error(memberCreateResult.message);
+        setMemberSyncMessage(memberCreateResult.message);
+        nextSaveMessage = `${saveResult.message} team_members 생성은 실패했습니다.`;
+      } else {
+        createdMembers = mapTeamMemberRowsToTeamMembers(memberCreateResult.data);
+        starterTasks = starterTasks.map((task, index) => ({
+          ...task,
+          assigneeId: createdMembers[Math.min(index, createdMembers.length - 1)]?.id ?? null,
+        }));
+        setMemberSyncMessage("");
+      }
+    }
+
     setProject({
       ...nextProject,
       id: saveResult.team?.id ?? nextProject.id,
     });
-    setMembers(nextMembers);
+    setMembers(createdMembers);
     setTasks(starterTasks);
     setScheduleSlots([]);
     setConfirmedMeetings([]);
@@ -397,7 +472,7 @@ export function CarryMateApp() {
     setOnboardingSheetMode("shareInvite");
     setInviteError("");
     setCopyFeedback("");
-    setTeamSaveMessage(saveResult.message);
+    setTeamSaveMessage(nextSaveMessage);
     setTaskSyncMessage("");
     return true;
   };
@@ -849,6 +924,11 @@ export function CarryMateApp() {
           {taskSyncMessage ? (
             <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[12px] font-medium text-warning">
               {taskSyncMessage}
+            </p>
+          ) : null}
+          {memberSyncMessage ? (
+            <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[12px] font-medium text-warning">
+              {memberSyncMessage}
             </p>
           ) : null}
         </div>

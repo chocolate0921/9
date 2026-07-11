@@ -1,4 +1,5 @@
-import { Task } from "@/types/carrymate";
+import { Task, TeamMember } from "@/types/carrymate";
+import { TeamMemberRow } from "@/lib/supabase/team-members";
 import { TaskRow } from "@/lib/supabase/tasks";
 
 export function isUuid(value: string | null | undefined) {
@@ -69,4 +70,20 @@ export function mapTaskRowToTask(row: TaskRow): Task {
 
 export function mapTaskRowsToTasks(rows: TaskRow[]) {
   return rows.map(mapTaskRowToTask);
+}
+
+export function mapTeamMemberRowToTeamMember(row: TeamMemberRow): TeamMember {
+  return {
+    id: row.id,
+    name: row.name,
+    role: row.role,
+    skillTag: row.skill_tag,
+    isLeader: row.is_leader,
+    availability: [],
+    status: row.status === "active" ? "active" : "former",
+  };
+}
+
+export function mapTeamMemberRowsToTeamMembers(rows: TeamMemberRow[]) {
+  return rows.map(mapTeamMemberRowToTeamMember);
 }
