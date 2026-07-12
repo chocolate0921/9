@@ -140,6 +140,7 @@ export function MeetingRoomSheet({
   const channelRef = useRef<{ unsubscribe: () => void } | null>(null);
   const subscribedMeetingIdRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const actionItems = useMemo(
     () => meetingNote?.aiActionItems ?? meeting.aiActionItems ?? [],
@@ -163,6 +164,22 @@ export function MeetingRoomSheet({
 
     container.scrollTop = container.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    if (meeting.isEnded || isSending) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!window.matchMedia("(pointer: fine)").matches) {
+      return;
+    }
+
+    messageInputRef.current?.focus();
+  }, [isSending, meeting.id, meeting.isEnded]);
 
   useEffect(() => {
     if (isDemo || !isUuid(meeting.id)) {
@@ -331,6 +348,15 @@ export function MeetingRoomSheet({
     selectedActionKeys.includes(buildActionKey(item, index)),
   );
 
+  const focusMessageInput = () => {
+    const input = messageInputRef.current;
+    if (!input || input.disabled || meeting.isEnded) {
+      return;
+    }
+
+    input.focus();
+  };
+
   const handleSendMessage = async () => {
     const trimmedMessage = messageInput.trim();
     if (!trimmedMessage || isSending) {
@@ -348,6 +374,7 @@ export function MeetingRoomSheet({
       };
       setMessages((current) => [...current, demoMessage]);
       setMessageInput("");
+      focusMessageInput();
       return;
     }
 
@@ -367,6 +394,7 @@ export function MeetingRoomSheet({
 
     if (!result.ok || !result.data) {
       setStatusMessage(result.message);
+      focusMessageInput();
       return;
     }
 
@@ -387,6 +415,7 @@ export function MeetingRoomSheet({
     );
     setMessageInput("");
     setStatusMessage("");
+    focusMessageInput();
   };
 
   const handleMessageKeyDown = (
@@ -645,6 +674,7 @@ export function MeetingRoomSheet({
 
             <div className="mt-4 flex gap-2">
               <textarea
+                ref={messageInputRef}
                 value={messageInput}
                 onChange={(event) => setMessageInput(event.target.value)}
                 onKeyDown={handleMessageKeyDown}

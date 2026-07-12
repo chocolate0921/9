@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { FileTab } from "@/components/file-tab";
@@ -34,7 +34,9 @@ import {
   createTeamMembers,
   getTeamMemberByProfile,
   getTeamMembersByTeam,
+  getTeamsForProfile,
   getUnlinkedTeamMembersByTeam,
+  type ProfileTeamSummary,
   type CreateTeamMemberSeed,
   type TeamMemberRow,
 } from "@/lib/supabase/team-members";
@@ -47,6 +49,7 @@ import {
 } from "@/lib/supabase/auth";
 import {
   generateInviteCode,
+  getTeamById,
   getTeamByInviteCode,
   normalizeInviteCode,
   saveTeamToSupabase,
@@ -95,6 +98,8 @@ const DEFAULT_AVAILABILITY = ["수 18:00", "목 14:00", "목 19:00"];
 const ROLE_POOL = ["팀장 / 진행 정리", "자료 조사", "디자인", "문서 작성"];
 const SKILL_POOL = ["정리형", "리서치형", "비주얼형", "문서형"];
 const DEMO_INVITE_CODE = "CARRY2026";
+const LAST_TEAM_ID_STORAGE_KEY = "carrymate:last-team-id";
+const LAST_TAB_STORAGE_KEY = "carrymate:last-tab";
 
 function getTaskDueAt(daysFromToday: number, hour = 18) {
   const date = new Date();
@@ -268,6 +273,23 @@ export function CarryMateApp({
     null,
   );
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
+  const [myTeams, setMyTeams] = useState<ProfileTeamSummary[]>([]);
+  const [myTeamsLoading, setMyTeamsLoading] = useState(false);
+  const [myTeamsMessage, setMyTeamsMessage] = useState("");
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
+  const [workspaceLoadMessage, setWorkspaceLoadMessage] = useState("");
+  const [isRestoringWorkspace, setIsRestoringWorkspace] = useState(
+    () => !normalizeInviteCode(initialInviteCode),
+  );
+  const restoredTeamRef = useRef(false);
+  const restoreAttemptKeyRef = useRef<string | null>(null);
+  const loadWorkspaceFromTeamIdRef = useRef<
+    (options: {
+      source: "card" | "restore" | "invite";
+      teamId: string;
+      memberRow?: TeamMemberRow | null;
+    }) => Promise<boolean>
+  >(async () => false);
 
   const activeMembers = useMemo(
     () => members.filter((member) => member.status === "active"),
@@ -290,6 +312,22 @@ export function CarryMateApp({
   useEffect(() => {
     membersRef.current = members;
   }, [members]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const savedTab = window.localStorage.getItem(LAST_TAB_STORAGE_KEY);
+    if (
+      savedTab === "home" ||
+      savedTab === "tasks" ||
+      savedTab === "schedule" ||
+      savedTab === "files"
+    ) {
+      setActiveTab(savedTab);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -332,6 +370,145 @@ export function CarryMateApp({
       subscription?.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!authenticatedUser?.id) {
+      setMyTeams([]);
+      setMyTeamsMessage("");
+      setMyTeamsLoading(false);
+      restoredTeamRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMyTeams = async () => {
+      setMyTeamsLoading(true);
+      setMyTeamsMessage("내 팀을 불러오는 중입니다.");
+      const result = await getTeamsForProfile(authenticatedUser.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      setMyTeamsLoading(false);
+
+      if (!result.ok || !result.data) {
+        setMyTeams([]);
+        setMyTeamsMessage(result.message);
+        return;
+      }
+
+      setMyTeams(result.data);
+      setMyTeamsMessage(
+        result.data.length > 0 ? "" : "아직 소속된 실제 팀이 없습니다.",
+      );
+    };
+
+    void loadMyTeams();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticatedUser?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || authLoading || workspaceInviteCode) {
+      return;
+    }
+
+    if (!authenticatedUser?.id) {
+      setIsRestoringWorkspace(false);
+      restoredTeamRef.current = false;
+      restoreAttemptKeyRef.current = null;
+      return;
+    }
+
+    const savedTeamId = window.localStorage.getItem(LAST_TEAM_ID_STORAGE_KEY);
+    if (!savedTeamId) {
+      setIsRestoringWorkspace(false);
+      return;
+    }
+
+    const restoreAttemptKey = `${authenticatedUser.id}:${savedTeamId}`;
+    if (restoredTeamRef.current || restoreAttemptKeyRef.current === restoreAttemptKey) {
+      return;
+    }
+
+    restoredTeamRef.current = true;
+    restoreAttemptKeyRef.current = restoreAttemptKey;
+    setIsRestoringWorkspace(true);
+
+    let cancelled = false;
+
+    const restoreWorkspace = async () => {
+      const membershipResult = await getTeamMemberByProfile(
+        savedTeamId,
+        authenticatedUser.id,
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!membershipResult.ok) {
+        console.error("Workspace restore membership query failed.", {
+          savedTeamId,
+          userId: authenticatedUser.id,
+          membershipError: membershipResult.message,
+        });
+        window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+        setWorkspaceLoadMessage("마지막 팀 복원에 실패했습니다.");
+        setIsRestoringWorkspace(false);
+        setViewMode("onboarding");
+        return;
+      }
+
+      if (!membershipResult.data) {
+        console.error("Workspace restore membership missing.", {
+          savedTeamId,
+          userId: authenticatedUser.id,
+          membershipError: "No team_members row for saved team and current user.",
+        });
+        window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+        setWorkspaceLoadMessage("마지막 팀 복원에 실패했습니다.");
+        setIsRestoringWorkspace(false);
+        setViewMode("onboarding");
+        return;
+      }
+
+      const restored = await loadWorkspaceFromTeamIdRef.current({
+        source: "restore",
+        teamId: savedTeamId,
+        memberRow: membershipResult.data,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!restored) {
+        console.error("Workspace restore data load failed.", {
+          savedTeamId,
+          userId: authenticatedUser.id,
+          membershipError: null,
+        });
+        setViewMode("onboarding");
+      }
+
+      setIsRestoringWorkspace(false);
+    };
+
+    void restoreWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authLoading,
+    authenticatedUser?.id,
+    workspaceInviteCode,
+  ]);
 
   useEffect(() => {
     if (!hasPersistentProjectId) {
@@ -476,6 +653,35 @@ export function CarryMateApp({
   }, [authenticatedUser?.id, hasPersistentProjectId, project.id]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (viewMode !== "workspace" || !hasPersistentProjectId) {
+      return;
+    }
+
+    window.localStorage.setItem(LAST_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab, hasPersistentProjectId, viewMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (hasPersistentProjectId && project.id) {
+      window.localStorage.setItem(LAST_TEAM_ID_STORAGE_KEY, project.id);
+      return;
+    }
+
+    if (authLoading || isRestoringWorkspace || viewMode !== "workspace") {
+      return;
+    }
+
+    window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+  }, [authLoading, hasPersistentProjectId, isRestoringWorkspace, project.id, viewMode]);
+
+  useEffect(() => {
     if (!workspaceInviteCode) {
       handledInviteCodeRef.current = "";
       return;
@@ -497,9 +703,6 @@ export function CarryMateApp({
     const loadWorkspaceFromInviteCode = async () => {
       setInviteError("");
       setTeamSaveMessage("");
-      setTaskSyncMessage("실제 팀 업무를 불러오는 중입니다.");
-      setMemberSyncMessage("실제 팀원 정보를 불러오는 중입니다.");
-      setMeetingSyncMessage("실제 팀 회의를 불러오는 중입니다.");
 
       const teamResult = await getTeamByInviteCode(workspaceInviteCode);
 
@@ -513,47 +716,13 @@ export function CarryMateApp({
             ? "존재하지 않는 초대 코드입니다. 링크를 다시 확인해 주세요."
             : teamResult.message,
         );
-        setTaskSyncMessage("");
-        setMemberSyncMessage("");
-        setMeetingSyncMessage("");
         setViewMode("onboarding");
         return;
       }
-
-      const [teamMembersResult, tasksResult] = await Promise.all([
-        getTeamMembersByTeam(teamResult.data.id),
-        getTasksByTeam(teamResult.data.id),
-      ]);
-
-      if (cancelled) {
-        return;
-      }
-
-      setProject(mapTeamRowToProject(teamResult.data));
-      setMembers(
-        teamMembersResult.ok && teamMembersResult.data
-          ? mapTeamMemberRowsToTeamMembers(teamMembersResult.data)
-          : [],
-      );
-      setTasks(
-        tasksResult.ok && tasksResult.data ? mapTaskRowsToTasks(tasksResult.data) : [],
-      );
-      setScheduleSlots([]);
-      setConfirmedMeetings([]);
-      setFiles([]);
-      setActiveTab("home");
-      setViewMode("workspace");
-      setOnboardingSheetMode(null);
-      setSheetMode(null);
-      setIsInviteModalOpen(false);
-      setInviteError("");
-      setCopyFeedback("");
-      setTaskSyncMessage(tasksResult.ok ? "" : tasksResult.message);
-      setMemberSyncMessage(teamMembersResult.ok ? "" : teamMembersResult.message);
-      setMeetingSyncMessage("");
-      setMemberLinkMessage("");
-      setPendingMemberExitId(null);
-      setActiveMeetingId(null);
+      await loadWorkspaceFromTeamIdRef.current({
+        source: "invite",
+        teamId: teamResult.data.id,
+      });
     };
 
     void loadWorkspaceFromInviteCode();
@@ -686,7 +855,134 @@ export function CarryMateApp({
     setCurrentMember(null);
     setPendingMemberExitId(null);
     setActiveMeetingId(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+    }
   };
+
+  const loadWorkspaceFromTeamId = useCallback(async (options: {
+    source: "card" | "restore" | "invite";
+    teamId: string;
+    memberRow?: TeamMemberRow | null;
+  }) => {
+    setIsWorkspaceLoading(true);
+    setWorkspaceLoadMessage(
+      options.source === "restore"
+        ? "마지막 팀을 복원하는 중입니다."
+        : "팀 데이터를 불러오는 중입니다.",
+    );
+    setTaskSyncMessage("실제 팀 업무를 불러오는 중입니다.");
+    setMemberSyncMessage("실제 팀원 정보를 불러오는 중입니다.");
+    setMeetingSyncMessage("실제 팀 회의를 불러오는 중입니다.");
+
+    const [teamResult, teamMembersResult, tasksResult, meetingsResult] =
+      await Promise.all([
+        getTeamById(options.teamId),
+        getTeamMembersByTeam(options.teamId),
+        getTasksByTeam(options.teamId),
+        getMeetingsByTeam(options.teamId),
+      ]);
+
+    if (!teamResult.ok || !teamResult.data) {
+      const message = teamResult.ok
+        ? "해당 팀을 찾을 수 없습니다."
+        : teamResult.message;
+      if (options.source === "restore") {
+        console.error("Workspace restore team load failed.", {
+          savedTeamId: options.teamId,
+          userId: authenticatedUser?.id ?? null,
+          membershipError: null,
+          teamLoadError: message,
+        });
+      }
+      setWorkspaceLoadMessage(message);
+      setInviteError(message);
+      if (options.source === "restore" && typeof window !== "undefined") {
+        window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+      }
+      setIsWorkspaceLoading(false);
+      return false;
+    }
+
+    const mappedMembers =
+      teamMembersResult.ok && teamMembersResult.data
+        ? mapTeamMemberRowsToTeamMembers(teamMembersResult.data)
+        : [];
+    const currentMemberRow =
+      options.memberRow ??
+      (authenticatedUser?.id && teamMembersResult.ok && teamMembersResult.data
+        ? teamMembersResult.data.find(
+            (member) => member.profile_id === authenticatedUser.id,
+          ) ?? null
+        : null);
+
+    if (options.source === "restore" && !currentMemberRow) {
+      const message = "마지막 팀 복원에 실패했습니다. 현재 계정의 팀 멤버십을 확인해 주세요.";
+      console.error("Workspace restore current member missing.", {
+        savedTeamId: options.teamId,
+        userId: authenticatedUser?.id ?? null,
+        membershipError: message,
+      });
+      setWorkspaceLoadMessage(message);
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+      }
+      setIsWorkspaceLoading(false);
+      return false;
+    }
+    const savedTab =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(LAST_TAB_STORAGE_KEY)
+        : null;
+    const restoredTab: TabId =
+      savedTab === "tasks" || savedTab === "schedule" || savedTab === "files"
+        ? savedTab
+        : "home";
+
+    setProject(mapTeamRowToProject(teamResult.data));
+    setMembers(mappedMembers);
+    setTasks(
+      tasksResult.ok && tasksResult.data ? mapTaskRowsToTasks(tasksResult.data) : [],
+    );
+    setConfirmedMeetings(
+      meetingsResult.ok && meetingsResult.data
+        ? mapMeetingRowsToConfirmedMeetings(meetingsResult.data)
+        : [],
+    );
+    setScheduleSlots([]);
+    setFiles([]);
+    setCurrentMember(
+      currentMemberRow ? mapTeamMemberRowsToTeamMembers([currentMemberRow])[0] : null,
+    );
+    setActiveTab(options.source === "restore" ? restoredTab : "home");
+    setViewMode("workspace");
+    setOnboardingSheetMode(null);
+    setSheetMode(null);
+    setIsInviteModalOpen(false);
+    setInviteError("");
+    setCopyFeedback("");
+    setMemberLinkMessage("");
+    setPendingMemberExitId(null);
+    setActiveMeetingId(null);
+    setTaskSyncMessage(tasksResult.ok ? "" : tasksResult.message);
+    setMemberSyncMessage(teamMembersResult.ok ? "" : teamMembersResult.message);
+    setMeetingSyncMessage(meetingsResult.ok ? "" : meetingsResult.message);
+    setWorkspaceLoadMessage("");
+    setIsWorkspaceLoading(false);
+    setIsRestoringWorkspace(false);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(LAST_TEAM_ID_STORAGE_KEY, options.teamId);
+      window.localStorage.setItem(
+        LAST_TAB_STORAGE_KEY,
+        options.source === "restore" ? restoredTab : "home",
+      );
+    }
+
+    return true;
+  }, [authenticatedUser?.id]);
+
+  loadWorkspaceFromTeamIdRef.current = loadWorkspaceFromTeamId;
 
   const openAuthSheet = (mode: AuthMode) => {
     setAuthMode(mode);
@@ -784,6 +1080,9 @@ export function CarryMateApp({
     setSession(null);
     setUser(null);
     setCurrentMember(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+    }
   };
 
   const openMemberLinkSheet = async () => {
@@ -1690,6 +1989,24 @@ export function CarryMateApp({
     );
   };
 
+  if (isRestoringWorkspace) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-10 pt-7">
+        <div className="rounded-[2rem] border border-line bg-white p-6 shadow-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand">
+            CarryMate
+          </p>
+          <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.02em] text-ink">
+            마지막 팀을 확인하는 중입니다
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            로그인 계정과 저장된 팀 정보를 대조한 뒤 워크스페이스를 복원합니다.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   if (viewMode === "onboarding") {
     return (
       <>
@@ -1711,6 +2028,19 @@ export function CarryMateApp({
           onOpenAuthSignUp={() => openAuthSheet("signUp")}
           onSignOut={handleSignOut}
           onTryDemo={loadDemoWorkspace}
+        />
+        <MyTeamsSection
+          isAuthenticated={isAuthenticated}
+          isLoading={myTeamsLoading || isWorkspaceLoading}
+          message={workspaceLoadMessage || myTeamsMessage}
+          teams={myTeams}
+          onEnterTeam={(summary) => {
+            void loadWorkspaceFromTeamId({
+              source: "card",
+              teamId: summary.team.id,
+              memberRow: summary.member,
+            });
+          }}
         />
         {renderOnboardingSheet()}
         {renderAuthSheet()}
@@ -1781,6 +2111,13 @@ export function CarryMateApp({
                   로그아웃
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => setViewMode("onboarding")}
+                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+              >
+                팀 전환
+              </button>
               <button
                 type="button"
                 onClick={openInviteModal}
@@ -2041,6 +2378,81 @@ function OnboardingScreen({
         </div>
       </section>
     </main>
+  );
+}
+
+function MyTeamsSection({
+  isAuthenticated,
+  isLoading,
+  message,
+  onEnterTeam,
+  teams,
+}: {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  message: string;
+  onEnterTeam: (summary: ProfileTeamSummary) => void;
+  teams: ProfileTeamSummary[];
+}) {
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return (
+    <section className="mx-auto mt-4 w-full max-w-md px-4 pb-6">
+      <div className="rounded-[2rem] border border-line bg-white p-5 shadow-soft">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand">
+              My Teams
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-ink">내 팀</h2>
+          </div>
+          <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+            {teams.length}개 팀
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {isLoading ? (
+            <div className="rounded-2xl border border-line bg-canvas px-4 py-4 text-sm text-muted">
+              {message || "내 팀 조회 중"}
+            </div>
+          ) : teams.length > 0 ? (
+            teams.map((summary) => (
+              <div
+                key={summary.member.id}
+                className="rounded-2xl border border-line bg-white px-4 py-4 shadow-soft"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{summary.team.team_name}</p>
+                    <p className="mt-1 text-[12px] text-muted">
+                      {summary.team.course_name} · {summary.team.deadline_label}
+                    </p>
+                    <p className="mt-2 text-[12px] text-muted">
+                      내 역할: {summary.member.role}
+                      {summary.member.is_leader ? " · 팀장" : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onEnterTeam(summary)}
+                    className="rounded-xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                  >
+                    들어가기
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-4 text-sm text-muted">
+              {message || "아직 소속된 실제 팀이 없습니다."}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

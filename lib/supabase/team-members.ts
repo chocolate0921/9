@@ -4,6 +4,7 @@ import {
   supabaseUrl,
 } from "@/lib/supabase/config";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { TeamRow } from "@/lib/supabase/teams";
 
 export type TeamMemberRow = {
   id: string;
@@ -51,6 +52,11 @@ type TeamMemberQueryResult<T> = {
   message: string;
 };
 
+export type ProfileTeamSummary = {
+  member: TeamMemberRow;
+  team: TeamRow;
+};
+
 const SKILL_TAG_POOL = ["정리형", "리서치형", "비주얼형", "문서형"] as const;
 
 function isDuplicateProfileConnectionMessage(message: string) {
@@ -71,7 +77,7 @@ async function parseErrorMessage(response: Response) {
     const parsed = JSON.parse(fallbackMessage) as SupabaseErrorPayload;
     detail = parsed.message ?? parsed.details ?? fallbackMessage;
   } catch {
-    // The response body is not always JSON.
+    // Response may not be JSON.
   }
 
   return detail;
@@ -323,7 +329,7 @@ export async function connectProfileToTeamMember(input: {
   if (linkedMember.errorMessage) {
     return {
       ok: false,
-      message: `같은 팀에서 기존 profile_id 연결 여부를 확인하지 못했습니다: ${linkedMember.errorMessage}`,
+      message: `같은 사용자에서 기존 profile_id 연결 여부를 확인하지 못했습니다. ${linkedMember.errorMessage}`,
     };
   }
 
@@ -565,5 +571,86 @@ export async function deleteTeamMember(
     ok: true,
     data: null,
     message: "team_member 삭제 성공",
+  };
+}
+
+export async function getTeamsForProfile(
+  profileId: string,
+): Promise<TeamMemberQueryResult<ProfileTeamSummary[]>> {
+  const configError = ensureSupabaseConfig();
+  if (configError) {
+    return configError;
+  }
+
+  const memberResponse = await fetch(
+    `${supabaseUrl}/rest/v1/team_members?profile_id=eq.${encodeURIComponent(profileId)}&select=*&order=joined_at.asc`,
+    {
+      method: "GET",
+      headers: {
+        apikey: supabasePublishableKey,
+        Authorization: `Bearer ${supabasePublishableKey}`,
+      },
+    },
+  );
+
+  if (!memberResponse.ok) {
+    const detail = await parseErrorMessage(memberResponse);
+    return {
+      ok: false,
+      message: `내 팀 목록 조회 실패: ${detail}`,
+    };
+  }
+
+  const memberRows = (await memberResponse.json()) as TeamMemberRow[];
+
+  if (memberRows.length === 0) {
+    return {
+      ok: true,
+      data: [],
+      message: "소속 팀이 없습니다.",
+    };
+  }
+
+  const teamIds = Array.from(new Set(memberRows.map((member) => member.team_id)));
+  const inFilter = `(${teamIds.map((teamId) => `"${teamId}"`).join(",")})`;
+  const teamResponse = await fetch(
+    `${supabaseUrl}/rest/v1/teams?id=in.${encodeURIComponent(inFilter)}&select=*`,
+    {
+      method: "GET",
+      headers: {
+        apikey: supabasePublishableKey,
+        Authorization: `Bearer ${supabasePublishableKey}`,
+      },
+    },
+  );
+
+  if (!teamResponse.ok) {
+    const detail = await parseErrorMessage(teamResponse);
+    return {
+      ok: false,
+      message: `소속 팀 상세 조회 실패: ${detail}`,
+    };
+  }
+
+  const teamRows = (await teamResponse.json()) as TeamRow[];
+  const teamById = new Map(teamRows.map((team) => [team.id, team]));
+  const data = memberRows
+    .map((member) => {
+      const team = teamById.get(member.team_id);
+      if (!team) {
+        return null;
+      }
+
+      return {
+        member,
+        team,
+      };
+    })
+    .filter((item): item is ProfileTeamSummary => Boolean(item));
+
+  return {
+    ok: true,
+    data,
+    message: data.length > 0 ? "내 팀 목록 조회 성공" : "소속 팀이 없습니다.",
   };
 }

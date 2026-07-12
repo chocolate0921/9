@@ -118,7 +118,7 @@ async function parseErrorMessage(response: Response) {
     const parsed = JSON.parse(fallbackMessage) as SupabaseInsertError;
     detail = parsed.message ?? parsed.details ?? fallbackMessage;
   } catch {
-    // Response may not be JSON, so keep the raw text as-is.
+    // Response may not be JSON.
   }
 
   return detail;
@@ -131,7 +131,7 @@ export async function saveTeamToSupabase(
     return {
       ok: false,
       message:
-        "Supabase 환경변수가 없습니다. .env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 넣어주세요.",
+        "Supabase 환경변수가 없습니다. .env.local의 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
     };
   }
 
@@ -168,12 +168,10 @@ export async function saveTeamToSupabase(
   }
 
   const teams = (await response.json()) as TeamRow[];
-  const team = teams[0];
-
   return {
     ok: true,
-    message: "Supabase 연동 완료 및 팀 정보가 저장되었습니다.",
-    team,
+    message: "Supabase 연동이 완료되어 팀 정보가 저장되었습니다.",
+    team: teams[0],
   };
 }
 
@@ -217,13 +215,48 @@ export async function getTeamByInviteCode(
   }
 
   const teams = (await response.json()) as TeamRow[];
-
   return {
     ok: true,
     data: teams[0] ?? null,
-    message: teams[0]
-      ? "초대 코드 팀 조회 성공"
-      : "해당 초대 코드에 연결된 팀이 없습니다.",
+    message: teams[0] ? "초대 코드 팀 조회 성공" : "해당 초대 코드의 팀이 없습니다.",
+  };
+}
+
+export async function getTeamById(
+  teamId: string,
+): Promise<TeamQueryResult<TeamRow | null>> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. .env.local의 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/teams?id=eq.${encodeURIComponent(teamId)}&select=*&limit=1`,
+    {
+      method: "GET",
+      headers: {
+        apikey: supabasePublishableKey,
+        Authorization: `Bearer ${supabasePublishableKey}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await parseErrorMessage(response);
+    return {
+      ok: false,
+      message: `Supabase 팀 조회 실패: ${detail}`,
+    };
+  }
+
+  const teams = (await response.json()) as TeamRow[];
+  return {
+    ok: true,
+    data: teams[0] ?? null,
+    message: teams[0] ? "팀 조회 성공" : "해당 팀이 없습니다.",
   };
 }
 
@@ -238,7 +271,7 @@ export async function updateTeamDetails(
     return {
       ok: false,
       message:
-        "Supabase 환경변수가 없습니다. .env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 넣어주세요.",
+        "Supabase 환경변수가 없습니다. .env.local의 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
     };
   }
 
@@ -281,16 +314,14 @@ export async function updateTeamDetails(
     const detail = await parseErrorMessage(response);
     return {
       ok: false,
-      message: `Supabase update 실패: ${detail}. 현재 teams 테이블 RLS에 UPDATE 정책이 없으면 이 요청은 거부될 수 있습니다.`,
+      message: `Supabase update 실패: ${detail}. 현재 teams 테이블 RLS의 UPDATE 정책이 없으면 요청이 거절될 수 있습니다.`,
     };
   }
 
   const teams = (await response.json()) as TeamRow[];
-  const team = teams[0];
-
   return {
     ok: true,
     message: "팀 정보가 업데이트되었습니다.",
-    team,
+    team: teams[0],
   };
 }
