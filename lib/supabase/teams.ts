@@ -42,6 +42,12 @@ type SaveTeamResult = {
   team?: TeamRow;
 };
 
+type TeamQueryResult<T> = {
+  ok: boolean;
+  data?: T;
+  message: string;
+};
+
 type UpdateTeamDetailsInput = {
   id: string;
   teamName?: string;
@@ -82,6 +88,10 @@ function normalizeDeadlineLabel(deadlineLabel?: string, endDate?: string) {
   }
 
   return "";
+}
+
+export function normalizeInviteCode(inviteCode: string | null | undefined) {
+  return inviteCode?.trim().toUpperCase() ?? "";
 }
 
 export function generateInviteCode() {
@@ -164,6 +174,56 @@ export async function saveTeamToSupabase(
     ok: true,
     message: "Supabase 연동 완료 및 팀 정보가 저장되었습니다.",
     team,
+  };
+}
+
+export async function getTeamByInviteCode(
+  inviteCode: string,
+): Promise<TeamQueryResult<TeamRow | null>> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. .env.local의 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const normalizedInviteCode = normalizeInviteCode(inviteCode);
+
+  if (!normalizedInviteCode) {
+    return {
+      ok: false,
+      message: "초대 코드가 비어 있습니다.",
+    };
+  }
+
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/teams?invite_code=eq.${encodeURIComponent(normalizedInviteCode)}&select=*&limit=1`,
+    {
+      method: "GET",
+      headers: {
+        apikey: supabasePublishableKey,
+        Authorization: `Bearer ${supabasePublishableKey}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await parseErrorMessage(response);
+    return {
+      ok: false,
+      message: `Supabase 팀 조회 실패: ${detail}`,
+    };
+  }
+
+  const teams = (await response.json()) as TeamRow[];
+
+  return {
+    ok: true,
+    data: teams[0] ?? null,
+    message: teams[0]
+      ? "초대 코드 팀 조회 성공"
+      : "해당 초대 코드에 연결된 팀이 없습니다.",
   };
 }
 

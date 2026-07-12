@@ -79,3 +79,36 @@ export async function upsertProfile(
     message: "profiles 저장 성공",
   };
 }
+
+export async function getProfileById(
+  profileId: string,
+): Promise<ProfileResult<ProfileRow | null>> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      message: `profiles 조회 실패: ${normalizeProfileErrorMessage(error)}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data,
+    message: data ? "profiles 조회 성공" : "연결된 profile이 없습니다.",
+  };
+}

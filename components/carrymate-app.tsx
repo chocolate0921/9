@@ -2,6 +2,7 @@
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
@@ -11,6 +12,7 @@ import { getDemoWorkspace } from "@/data/carrymate";
 import {
   formatTaskDueLabel,
   isUuid,
+  mapTeamRowToProject,
   mapTaskRowsToTasks,
   mapTeamMemberRowsToTeamMembers,
 } from "@/lib/mappers/carrymate";
@@ -39,6 +41,8 @@ import {
 } from "@/lib/supabase/auth";
 import {
   generateInviteCode,
+  getTeamByInviteCode,
+  normalizeInviteCode,
   saveTeamToSupabase,
 } from "@/lib/supabase/teams";
 import {
@@ -153,7 +157,12 @@ function buildInviteLink(inviteCode: string) {
   return `${origin}/join/${inviteCode}`;
 }
 
-export function CarryMateApp() {
+export function CarryMateApp({
+  initialInviteCode,
+}: {
+  initialInviteCode?: string;
+}) {
+  const router = useRouter();
   // TODO: Supabase Auth/Router 연동 시 온보딩 여부와 현재 탭 상태는
   // 세션/유저 프로필/URL 상태를 기준으로 초기화하도록 교체 가능
   const [viewMode, setViewMode] = useState<ViewMode>("onboarding");
@@ -190,6 +199,7 @@ export function CarryMateApp() {
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
   const tasksRef = useRef(tasks);
   const membersRef = useRef(members);
+  const handledInviteCodeRef = useRef("");
 
   // TODO: Supabase 연동 시 아래 UI 상태들은 서버 저장 대상이 아니라
   // 클라이언트 전용 로컬 UI 상태로 그대로 유지하거나 zustand/router state로 분리 가능
@@ -217,6 +227,7 @@ export function CarryMateApp() {
   const userNickname = getUserNickname(authenticatedUser ?? user);
   const inviteCode = project.inviteCode || (!hasPersistentProjectId ? DEMO_INVITE_CODE : "");
   const inviteLink = inviteCode ? buildInviteLink(inviteCode) : "";
+  const workspaceInviteCode = normalizeInviteCode(initialInviteCode);
 
   useEffect(() => {
     tasksRef.current = tasks;
@@ -378,6 +389,90 @@ export function CarryMateApp() {
       cancelled = true;
     };
   }, [authenticatedUser?.id, hasPersistentProjectId, project.id]);
+
+  useEffect(() => {
+    if (!workspaceInviteCode) {
+      handledInviteCodeRef.current = "";
+      return;
+    }
+
+    if (handledInviteCodeRef.current === workspaceInviteCode) {
+      return;
+    }
+
+    handledInviteCodeRef.current = workspaceInviteCode;
+
+    if (workspaceInviteCode === DEMO_INVITE_CODE) {
+      loadDemoWorkspace();
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadWorkspaceFromInviteCode = async () => {
+      setInviteError("");
+      setTeamSaveMessage("");
+      setTaskSyncMessage("실제 팀 업무를 불러오는 중입니다.");
+      setMemberSyncMessage("실제 팀원 정보를 불러오는 중입니다.");
+
+      const teamResult = await getTeamByInviteCode(workspaceInviteCode);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!teamResult.ok || !teamResult.data) {
+        setInviteError(
+          teamResult.ok
+            ? "존재하지 않는 초대 코드입니다. 링크를 다시 확인해 주세요."
+            : teamResult.message,
+        );
+        setTaskSyncMessage("");
+        setMemberSyncMessage("");
+        setViewMode("onboarding");
+        return;
+      }
+
+      const [teamMembersResult, tasksResult] = await Promise.all([
+        getTeamMembersByTeam(teamResult.data.id),
+        getTasksByTeam(teamResult.data.id),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      setProject(mapTeamRowToProject(teamResult.data));
+      setMembers(
+        teamMembersResult.ok && teamMembersResult.data
+          ? mapTeamMemberRowsToTeamMembers(teamMembersResult.data)
+          : [],
+      );
+      setTasks(
+        tasksResult.ok && tasksResult.data ? mapTaskRowsToTasks(tasksResult.data) : [],
+      );
+      setScheduleSlots([]);
+      setConfirmedMeetings([]);
+      setFiles([]);
+      setActiveTab("home");
+      setViewMode("workspace");
+      setOnboardingSheetMode(null);
+      setSheetMode(null);
+      setIsInviteModalOpen(false);
+      setInviteError("");
+      setCopyFeedback("");
+      setTaskSyncMessage(tasksResult.ok ? "" : tasksResult.message);
+      setMemberSyncMessage(teamMembersResult.ok ? "" : teamMembersResult.message);
+      setMemberLinkMessage("");
+      setPendingMemberExitId(null);
+    };
+
+    void loadWorkspaceFromInviteCode();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceInviteCode]);
 
   // 파생 요약 값은 여러 카드가 동시에 참조하므로
   // 렌더마다 직접 계산하지 않고 한 곳에서 일관되게 계산한다.
@@ -869,13 +964,20 @@ export function CarryMateApp() {
   };
 
   const handleJoinWithCode = (code: string) => {
-    // 실제 서버 검증 대신 데모 코드만 성공 처리한다.
-    if (code.trim() === "CARRY2026") {
+    const normalizedCode = normalizeInviteCode(code);
+
+    if (normalizedCode === DEMO_INVITE_CODE) {
       loadDemoWorkspace();
       return true;
     }
 
-    setInviteError("초대 코드가 맞지 않아요. 데모 코드는 CARRY2026입니다.");
+    if (!normalizedCode) {
+      setInviteError("초대 코드를 입력해 주세요.");
+      return false;
+    }
+
+    setInviteError("");
+    void router.push(`/join/${normalizedCode}`);
     return false;
   };
 
@@ -1230,7 +1332,9 @@ export function CarryMateApp() {
       return (
         <InviteLinkModal
           onClose={() => setOnboardingSheetMode(null)}
-          onConfirm={loadDemoWorkspace}
+          onConfirm={() => {
+            void router.push(`/join/${DEMO_INVITE_CODE}`);
+          }}
         />
       );
     }
@@ -1239,7 +1343,9 @@ export function CarryMateApp() {
       return (
         <QrScannerModal
           onClose={() => setOnboardingSheetMode(null)}
-          onScanSuccess={loadDemoWorkspace}
+          onScanSuccess={() => {
+            void router.push(`/join/${DEMO_INVITE_CODE}`);
+          }}
         />
       );
     }

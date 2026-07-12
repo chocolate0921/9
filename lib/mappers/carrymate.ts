@@ -1,6 +1,9 @@
 import { Task, TeamMember } from "@/types/carrymate";
 import { TeamMemberRow } from "@/lib/supabase/team-members";
 import { TaskRow } from "@/lib/supabase/tasks";
+import { TeamRow } from "@/lib/supabase/teams";
+import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
+import { Project } from "@/types/carrymate";
 
 export function isUuid(value: string | null | undefined) {
   if (!value) {
@@ -70,6 +73,20 @@ export function mapTaskRowToTask(row: TaskRow): Task {
 
 export function mapTaskRowsToTasks(rows: TaskRow[]) {
   return rows.map(mapTaskRowToTask);
+}
+
+export function mapTeamRowToProject(row: TeamRow): Project {
+  return {
+    id: row.id,
+    name: row.team_name,
+    courseName: row.course_name,
+    deadlineLabel:
+      row.deadline_label || (row.end_date ? formatDeadlineLabel(row.end_date) : ""),
+    inviteCode: row.invite_code,
+    description: row.description ?? undefined,
+    startDate: row.start_date ?? undefined,
+    endDate: row.end_date ?? undefined,
+  };
 }
 
 export function mapTeamMemberRowToTeamMember(row: TeamMemberRow): TeamMember {

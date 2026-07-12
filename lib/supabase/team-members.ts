@@ -53,6 +53,16 @@ type TeamMemberQueryResult<T> = {
 
 const SKILL_TAG_POOL = ["정리형", "리서치형", "비주얼형", "문서형"] as const;
 
+function isDuplicateProfileConnectionMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("duplicate") ||
+    normalized.includes("unique") ||
+    normalized.includes("23505")
+  );
+}
+
 async function parseErrorMessage(response: Response) {
   const fallbackMessage = await response.text();
   let detail = fallbackMessage;
@@ -357,6 +367,13 @@ export async function connectProfileToTeamMember(input: {
     .single();
 
   if (error) {
+    if (isDuplicateProfileConnectionMessage(error.message)) {
+      return {
+        ok: false,
+        message: "이 계정은 이미 현재 팀에 참여되어 있습니다.",
+      };
+    }
+
     return {
       ok: false,
       message: `team_members profile_id 연결 실패: ${error.message}`,
@@ -405,6 +422,13 @@ export async function createAndLinkTeamMember(input: {
   ]);
 
   if (!createResult.ok || !createResult.data?.[0]) {
+    if (isDuplicateProfileConnectionMessage(createResult.message)) {
+      return {
+        ok: false,
+        message: "이 계정은 이미 현재 팀에 참여되어 있습니다.",
+      };
+    }
+
     return {
       ok: false,
       message: createResult.message,
