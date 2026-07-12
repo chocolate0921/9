@@ -15,9 +15,24 @@ const ATTENDANCE_META: Record<
 
 const INITIAL_RULES = [
   { id: "r1", text: "회의 시작 10분 전까지 입장하기", checked: true },
-  { id: "r2", text: "핵심 안건은 짧고 명확하게 정리하기", checked: true },
+  { id: "r2", text: "논의 안건은 짧고 명확하게 정리하기", checked: true },
   { id: "r3", text: "종료 전에 바로 다음 할 일을 확정하기", checked: false },
 ];
+
+const MEETING_STATUS_META = {
+  scheduled: {
+    label: "예정",
+    className: "bg-violet-50 text-violet-600",
+  },
+  inProgress: {
+    label: "진행 중",
+    className: "bg-blue-50 text-brand",
+  },
+  ended: {
+    label: "종료",
+    className: "bg-slate-100 text-slate-600",
+  },
+} as const;
 
 export function ScheduleTab({
   meetings,
@@ -62,7 +77,7 @@ export function ScheduleTab({
           <div>
             <p className="text-[11px] font-bold text-[#7b74ee]">이번 주 회의 플랜</p>
             <h2 className="mt-2 text-[23px] font-extrabold leading-7 text-[#262236]">
-              일정과 회의를 한 곳에서 정리
+              일정과 회의를 한 곳에 정리
             </h2>
           </div>
           <div className="flex flex-col gap-2">
@@ -82,7 +97,7 @@ export function ScheduleTab({
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <MiniStat label="남은 일정" value={`${slots.length + meetings.length}개`} />
-          <MiniStat label="참여 대상" value={`${activeMembers.length}명`} />
+          <MiniStat label="참여 인원" value={`${activeMembers.length}명`} />
         </div>
       </section>
 
@@ -140,72 +155,72 @@ export function ScheduleTab({
       <SectionTitle title="프로젝트 타임라인" action="회의 만들기" onClick={onCreateMeeting} />
       <div className="space-y-3">
         {meetings.length > 0 ? (
-          meetings.map((meeting, index) => (
-            <article
-              key={meeting.id}
-              className="rounded-[22px] border border-[#eeeaf7] bg-white p-4 shadow-card"
-            >
-              <div className="flex gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0eeff] text-[11px] font-extrabold text-[#6259e8]">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-[13px] font-extrabold text-[#332f42]">
-                      {meeting.title}
-                    </p>
-                    {meeting.isEnded ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold text-slate-600">
-                        종료됨
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[9px] font-bold text-brand">
-                        진행 가능
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-[11px] text-[#958fa1]">
-                    {meeting.dateLabel} · {meeting.timeRange}
-                  </p>
-                </div>
-              </div>
+          meetings.map((meeting, index) => {
+            const statusMeta = MEETING_STATUS_META[meeting.status];
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {activeMembers.map((member) => {
-                  const key = `${meeting.id}-${member.id}`;
-                  const status = attendanceMap[key] ?? "attending";
-
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => cycleAttendance(meeting.id, member.id)}
-                      className={`rounded-full px-3 py-1.5 text-[9px] font-bold ${ATTENDANCE_META[status].className}`}
-                    >
-                      {member.name} · {ATTENDANCE_META[status].label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {meeting.aiSummary ? (
-                <div className="mt-4 rounded-2xl bg-[#faf9ff] px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6259e8]">
-                    AI 요약
-                  </p>
-                  <p className="mt-2 text-[12px] leading-6 text-[#625c6d]">
-                    {meeting.aiSummary}
-                  </p>
-                </div>
-              ) : null}
-
-              <button
-                onClick={() => onOpenMeeting(meeting.id)}
-                className="mt-4 w-full rounded-xl border border-[#dcd6ff] bg-white py-2.5 text-[11px] font-bold text-[#6259e8]"
+            return (
+              <article
+                key={meeting.id}
+                className="rounded-[22px] border border-[#eeeaf7] bg-white p-4 shadow-card"
               >
-                회의 채팅 열기
-              </button>
-            </article>
-          ))
+                <div className="flex gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0eeff] text-[11px] font-extrabold text-[#6259e8]">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-[13px] font-extrabold text-[#332f42]">
+                        {meeting.title}
+                      </p>
+                      <span
+                        className={`rounded-full px-2 py-1 text-[9px] font-bold ${statusMeta.className}`}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-[#958fa1]">
+                      {meeting.dateLabel} · {meeting.timeRange}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {activeMembers.map((member) => {
+                    const key = `${meeting.id}-${member.id}`;
+                    const status = attendanceMap[key] ?? "attending";
+
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => cycleAttendance(meeting.id, member.id)}
+                        className={`rounded-full px-3 py-1.5 text-[9px] font-bold ${ATTENDANCE_META[status].className}`}
+                      >
+                        {member.name} · {ATTENDANCE_META[status].label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {meeting.aiSummary ? (
+                  <div className="mt-4 rounded-2xl bg-[#faf9ff] px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6259e8]">
+                      AI 요약
+                    </p>
+                    <p className="mt-2 text-[12px] leading-6 text-[#625c6d]">
+                      {meeting.aiSummary}
+                    </p>
+                  </div>
+                ) : null}
+
+                <button
+                  onClick={() => onOpenMeeting(meeting.id)}
+                  className="mt-4 w-full rounded-xl border border-[#dcd6ff] bg-white py-2.5 text-[11px] font-bold text-[#6259e8]"
+                >
+                  회의 채팅 열기
+                </button>
+              </article>
+            );
+          })
         ) : (
           <Empty text="확정된 회의가 아직 없습니다." />
         )}

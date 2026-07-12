@@ -12,6 +12,7 @@ import { TaskTab } from "@/components/task-tab";
 import { getDemoWorkspace } from "@/data/carrymate";
 import {
   formatTaskDueLabel,
+  getMeetingStatus,
   isUuid,
   mapMeetingRowsToConfirmedMeetings,
   mapTeamRowToProject,
@@ -1552,11 +1553,18 @@ export function CarryMateApp({
       dateLabel: formatMeetingDateLabel(startsAt),
       timeRange: formatMeetingTimeRange(startsAt, endsAt || null),
       attendeeCount: activeMembers.length,
+      status: getMeetingStatus({
+        startsAt,
+        endsAt: endsAt || null,
+      }),
       createdByMemberId: currentMember?.id ?? null,
       startsAt,
       endsAt: endsAt || null,
       teamId: hasPersistentProjectId ? project.id : undefined,
-      isEnded: false,
+      isEnded: getMeetingStatus({
+        startsAt,
+        endsAt: endsAt || null,
+      }) === "ended",
     };
 
     if (!hasPersistentProjectId) {
@@ -1601,7 +1609,9 @@ export function CarryMateApp({
       dateLabel: selectedSlot.dateLabel,
       timeRange: selectedSlot.timeRange,
       attendeeCount: selectedSlot.memberIds.length,
+      status: "inProgress",
       createdByMemberId: activeMembers[0]?.id ?? null,
+      isEnded: false,
     };
 
     const startsAt = new Date().toISOString();
@@ -1693,17 +1703,19 @@ export function CarryMateApp({
 
   const handleImportMeetingActionItems = async (
     meeting: ConfirmedMeeting,
-    items: MeetingActionItem[],
+    items: Array<{ key: string; item: MeetingActionItem }>,
   ) => {
     if (items.length === 0) {
       return {
         ok: false,
         message: "선택한 할 일 후보가 없습니다.",
+        imported: [],
+        failed: [],
       };
     }
 
     if (!hasPersistentProjectId) {
-      const demoTasks = items.map((item, index) => {
+      const demoTasks = items.map(({ item }, index) => {
         const assignee = members.find((member) => member.name === item.assigneeName);
         const dueAt = new Date();
         dueAt.setDate(dueAt.getDate() + item.dueDateOffsetDays);
@@ -1726,12 +1738,19 @@ export function CarryMateApp({
       return {
         ok: true,
         message: `${demoTasks.length}개의 데모 업무를 Tasks에 추가했습니다.`,
+        imported: items.map(({ key }) => ({
+          key,
+          taskId: null,
+        })),
+        failed: [],
       };
     }
 
     const createdTasks: Task[] = [];
+    const imported: Array<{ key: string; taskId: string | null }> = [];
+    const failed: Array<{ key: string; message: string }> = [];
 
-    for (const item of items) {
+    for (const { key, item } of items) {
       const assignee = members.find((member) => member.name === item.assigneeName);
       const dueAt = new Date();
       dueAt.setHours(18, 0, 0, 0);
@@ -1748,22 +1767,38 @@ export function CarryMateApp({
       });
 
       if (!result.ok || !result.data) {
-        return {
-          ok: false,
+        failed.push({
+          key,
           message: result.message,
-        };
+        });
+        continue;
       }
 
       createdTasks.push(mapTaskRowsToTasks([result.data])[0]);
+      imported.push({
+        key,
+        taskId: result.data.id,
+      });
     }
 
-    setTasks((current) => [...createdTasks, ...current]);
-    setTaskSyncMessage("");
-    setActiveTab("tasks");
+    if (createdTasks.length > 0) {
+      setTasks((current) => [...createdTasks, ...current]);
+      setTaskSyncMessage("");
+      setActiveTab("tasks");
+    }
+
+    const message =
+      failed.length === 0
+        ? `${createdTasks.length}개의 업무를 실제 Tasks 보드에 등록했습니다.`
+        : createdTasks.length === 0
+          ? `업무 등록에 실패했습니다. ${failed[0]?.message ?? ""}`.trim()
+          : `${createdTasks.length}개 등록, ${failed.length}개 실패했습니다. 실패한 항목은 다시 시도해 주세요.`;
 
     return {
-      ok: true,
-      message: `${createdTasks.length}개의 업무를 실제 Tasks 보드에 등록했습니다.`,
+      ok: failed.length === 0 && createdTasks.length > 0,
+      message,
+      imported,
+      failed,
     };
   };
 

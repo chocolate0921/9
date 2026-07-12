@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   isUuid,
   mapMeetingMessageRowsToMeetingMessages,
   mapMeetingNoteRowToMeetingNote,
 } from "@/lib/mappers/carrymate";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   createMeetingMessage,
   createMeetingNote,
@@ -25,6 +25,8 @@ import {
 type ImportResult = {
   ok: boolean;
   message: string;
+  imported: Array<{ key: string; taskId: string | null }>;
+  failed: Array<{ key: string; message: string }>;
 };
 
 const DEMO_MESSAGES: MeetingMessage[] = [
@@ -33,7 +35,7 @@ const DEMO_MESSAGES: MeetingMessage[] = [
     meetingId: "demo-meeting",
     memberId: "member-1",
     senderName: "민지",
-    message: "오늘 발표 흐름 먼저 정리하고 역할 분담까지 확정할게요.",
+    message: "발표 흐름 먼저 정리하고 역할 분담까지 오늘 안에 맞춰보자.",
     createdAt: new Date().toISOString(),
   },
   {
@@ -41,7 +43,7 @@ const DEMO_MESSAGES: MeetingMessage[] = [
     meetingId: "demo-meeting",
     memberId: "member-2",
     senderName: "준호",
-    message: "제가 경쟁 서비스 비교와 참고 사례를 오늘 안에 마무리하겠습니다.",
+    message: "경쟁 서비스 비교 자료는 오늘 밤까지 정리해 둘게.",
     createdAt: new Date().toISOString(),
   },
   {
@@ -49,10 +51,25 @@ const DEMO_MESSAGES: MeetingMessage[] = [
     meetingId: "demo-meeting",
     memberId: "member-3",
     senderName: "서연",
-    message: "메인 화면 시안은 내일 오전까지 1차 버전으로 공유할게요.",
+    message: "메인 화면 시안은 내일 저녁 전에 1차 버전으로 공유할게.",
     createdAt: new Date().toISOString(),
   },
 ];
+
+const STATUS_META = {
+  scheduled: {
+    label: "예정",
+    className: "bg-violet-50 text-violet-600",
+  },
+  inProgress: {
+    label: "진행 중",
+    className: "bg-blue-50 text-brand",
+  },
+  ended: {
+    label: "종료",
+    className: "bg-slate-100 text-slate-600",
+  },
+} as const;
 
 function buildActionKey(item: MeetingActionItem, index: number) {
   return `${index}:${item.title}:${item.assigneeName}:${item.dueDateOffsetDays}`;
@@ -76,11 +93,11 @@ function createDemoSummary(messages: MeetingMessage[]) {
 
   return {
     summary:
-      "회의에서 발표 준비 우선순위와 각자 맡을 역할을 정리했습니다. 자료 조사, 화면 시안, 발표 흐름 정리가 핵심 축으로 정리되었습니다.",
+      "회의에서 발표 준비 우선순위와 각자 맡을 일을 정리했습니다. 자료 조사, 화면 시안, 발표 흐름 정리를 순차적으로 진행합니다.",
     decisions: [
-      "오늘 안에 발표 전체 흐름을 한 번 더 검토한다.",
-      "경쟁 서비스 조사와 화면 시안을 분리해서 진행한다.",
-      "내일 오전까지 1차 결과물을 공유한다.",
+      "오늘 안에 발표 전체 흐름 초안을 검토한다.",
+      "경쟁 서비스 조사와 화면 시안을 나눠서 진행한다.",
+      "내일 저녁까지 1차 결과물을 공유한다.",
     ],
     actionItems: [
       {
@@ -89,7 +106,7 @@ function createDemoSummary(messages: MeetingMessage[]) {
         dueDateOffsetDays: 1,
       },
       {
-        title: "경쟁 서비스 비교표 정리",
+        title: "경쟁 서비스 비교 자료 정리",
         assigneeName: senders[1] ?? "",
         dueDateOffsetDays: 1,
       },
@@ -100,6 +117,27 @@ function createDemoSummary(messages: MeetingMessage[]) {
       },
     ],
   };
+}
+
+function applyImportedActionItems(
+  items: MeetingActionItem[],
+  imported: Array<{ key: string; taskId: string | null }>,
+) {
+  const importedMap = new Map(imported.map((item) => [item.key, item]));
+
+  return items.map((item, index) => {
+    const key = buildActionKey(item, index);
+    const match = importedMap.get(key);
+    if (!match) {
+      return item;
+    }
+
+    return {
+      ...item,
+      transferred: true,
+      taskId: match.taskId ?? null,
+    };
+  });
 }
 
 export function MeetingRoomSheet({
@@ -119,7 +157,7 @@ export function MeetingRoomSheet({
   onClose: () => void;
   onImportActionItems: (
     meeting: ConfirmedMeeting,
-    items: MeetingActionItem[],
+    items: Array<{ key: string; item: MeetingActionItem }>,
   ) => Promise<ImportResult>;
   onMeetingUpdated: (meeting: ConfirmedMeeting) => void;
   projectId: string;
@@ -142,6 +180,8 @@ export function MeetingRoomSheet({
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  const meetingStatus = meeting.status;
+  const isMeetingEnded = meetingStatus === "ended";
   const actionItems = useMemo(
     () => meetingNote?.aiActionItems ?? meeting.aiActionItems ?? [],
     [meeting.aiActionItems, meetingNote?.aiActionItems],
@@ -151,9 +191,29 @@ export function MeetingRoomSheet({
     [meeting.aiDecisions, meetingNote?.aiDecisions],
   );
   const summaryText = meetingNote?.aiSummary ?? meeting.aiSummary ?? null;
+  const canEndMeeting = meetingStatus === "inProgress" && !summaryText;
+  const importedActionKeys = useMemo(
+    () =>
+      actionItems.flatMap((item, index) =>
+        item.transferred ? [buildActionKey(item, index)] : [],
+      ),
+    [actionItems],
+  );
+  const selectedActionItems = actionItems.flatMap((item, index) => {
+    const key = buildActionKey(item, index);
+    return selectedActionKeys.includes(key) ? [{ key, item }] : [];
+  });
 
   useEffect(() => {
-    setSelectedActionKeys(actionItems.map((item, index) => buildActionKey(item, index)));
+    setSelectedActionKeys(
+      actionItems.flatMap((item, index) => {
+        if (item.transferred) {
+          return [];
+        }
+
+        return [buildActionKey(item, index)];
+      }),
+    );
   }, [meeting.id, actionItems]);
 
   useEffect(() => {
@@ -166,7 +226,7 @@ export function MeetingRoomSheet({
   }, [messages]);
 
   useEffect(() => {
-    if (meeting.isEnded || isSending) {
+    if (isMeetingEnded || isSending) {
       return;
     }
 
@@ -179,7 +239,7 @@ export function MeetingRoomSheet({
     }
 
     messageInputRef.current?.focus();
-  }, [isSending, meeting.id, meeting.isEnded]);
+  }, [isMeetingEnded, isSending, meeting.id]);
 
   useEffect(() => {
     if (isDemo || !isUuid(meeting.id)) {
@@ -339,18 +399,9 @@ export function MeetingRoomSheet({
     };
   }, [isDemo, meeting.id]);
 
-  const uniqueSenderNames = useMemo(
-    () => Array.from(new Set(messages.map((message) => message.senderName))),
-    [messages],
-  );
-
-  const selectedActionItems = actionItems.filter((item, index) =>
-    selectedActionKeys.includes(buildActionKey(item, index)),
-  );
-
   const focusMessageInput = () => {
     const input = messageInputRef.current;
-    if (!input || input.disabled || meeting.isEnded) {
+    if (!input || input.disabled || isMeetingEnded) {
       return;
     }
 
@@ -359,7 +410,7 @@ export function MeetingRoomSheet({
 
   const handleSendMessage = async () => {
     const trimmedMessage = messageInput.trim();
-    if (!trimmedMessage || isSending) {
+    if (!trimmedMessage || isSending || isMeetingEnded) {
       return;
     }
 
@@ -379,7 +430,7 @@ export function MeetingRoomSheet({
     }
 
     if (!currentMember) {
-      setStatusMessage("실제 팀 채팅은 로그인 후 팀원 연결이 완료된 상태에서만 전송할 수 있어요.");
+      setStatusMessage("실제 팀 채팅은 로그인 후 팀원 연결이 완료된 상태에서만 전송할 수 있습니다.");
       return;
     }
 
@@ -431,7 +482,7 @@ export function MeetingRoomSheet({
 
     event.preventDefault();
 
-    if (isSending || meeting.isEnded || !messageInput.trim()) {
+    if (isSending || isMeetingEnded || !messageInput.trim()) {
       return;
     }
 
@@ -439,7 +490,7 @@ export function MeetingRoomSheet({
   };
 
   const handleEndMeeting = async () => {
-    if (isEnding || meeting.isEnded) {
+    if (isEnding || !canEndMeeting) {
       return;
     }
 
@@ -449,6 +500,7 @@ export function MeetingRoomSheet({
       const demoSummary = createDemoSummary(messages);
       const updatedMeeting: ConfirmedMeeting = {
         ...meeting,
+        status: "ended",
         isEnded: true,
         endsAt: new Date().toISOString(),
         aiSummary: demoSummary.summary,
@@ -456,7 +508,7 @@ export function MeetingRoomSheet({
         aiActionItems: demoSummary.actionItems,
       };
       onMeetingUpdated(updatedMeeting);
-      setStatusMessage("데모 회의를 종료하고 예시 요약을 생성했습니다.");
+      setStatusMessage("데모 회의를 종료하고 즉시 요약을 생성했습니다.");
       setIsEnding(false);
       return;
     }
@@ -502,8 +554,8 @@ export function MeetingRoomSheet({
         title: meeting.title,
         content: transcript,
         members:
-          uniqueSenderNames.length > 0
-            ? uniqueSenderNames
+          Array.from(new Set(messages.map((message) => message.senderName))).length > 0
+            ? Array.from(new Set(messages.map((message) => message.senderName)))
             : members.map((member) => member.name),
       }),
     });
@@ -546,6 +598,7 @@ export function MeetingRoomSheet({
 
     onMeetingUpdated({
       ...meeting,
+      status: "ended",
       endsAt: endResult.data?.ends_at ?? endedAt,
       isEnded: true,
       aiSummary: savedNote.aiSummary ?? aiPayload.summary,
@@ -564,12 +617,59 @@ export function MeetingRoomSheet({
 
     setIsImporting(true);
     const result = await onImportActionItems(meeting, selectedActionItems);
-    setIsImporting(false);
-    setStatusMessage(result.message);
-    if (result.ok) {
-      setSelectedActionKeys([]);
+
+    let nextMessage = result.message;
+
+    if (result.imported.length > 0) {
+      const updatedActionItems = applyImportedActionItems(actionItems, result.imported);
+
+      if (!isDemo && meetingNote) {
+        const noteResult = await createMeetingNote({
+          teamId: meetingNote.teamId,
+          meetingId: meeting.id,
+          title: meetingNote.title,
+          content: meetingNote.content,
+          aiSummary: meetingNote.aiSummary,
+          aiDecisions: meetingNote.aiDecisions,
+          aiActionItems: updatedActionItems,
+        });
+
+        if (noteResult.ok && noteResult.data) {
+          const savedNote = mapMeetingNoteRowToMeetingNote(noteResult.data);
+          setMeetingNote(savedNote);
+          onMeetingUpdated({
+            ...meeting,
+            aiActionItems: savedNote.aiActionItems,
+            noteId: savedNote.id,
+          });
+        } else if (!noteResult.ok) {
+          nextMessage = `${nextMessage} 회의록 전송 상태 저장은 실패했습니다.`;
+        }
+      } else {
+        setMeetingNote((current) =>
+          current
+            ? {
+                ...current,
+                aiActionItems: updatedActionItems,
+              }
+            : current,
+        );
+        onMeetingUpdated({
+          ...meeting,
+          aiActionItems: updatedActionItems,
+        });
+      }
+
+      setSelectedActionKeys((current) =>
+        current.filter((key) => !result.imported.some((item) => item.key === key)),
+      );
     }
+
+    setIsImporting(false);
+    setStatusMessage(nextMessage);
   };
+
+  const statusMeta = STATUS_META[meetingStatus];
 
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/35 px-4 pb-6 pt-10">
@@ -579,7 +679,14 @@ export function MeetingRoomSheet({
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand">
               Team Meeting
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-ink">{meeting.title}</h2>
+            <div className="mt-1 flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-ink">{meeting.title}</h2>
+              <span
+                className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusMeta.className}`}
+              >
+                {statusMeta.label}
+              </span>
+            </div>
             <p className="mt-1 text-[12px] text-muted">
               {meeting.dateLabel} · {meeting.timeRange}
             </p>
@@ -596,7 +703,9 @@ export function MeetingRoomSheet({
         <div className="max-h-[75vh] overflow-y-auto px-5 py-4">
           <div className="rounded-2xl border border-line bg-canvas px-4 py-3 text-[12px] leading-6 text-muted">
             {statusMessage ||
-              "채팅 기반 회의 내용을 남기고, 종료 시 AI가 요약과 할 일 후보를 정리합니다."}
+              (isMeetingEnded
+                ? "종료된 회의입니다. 기존 메시지와 AI 회의록은 계속 확인할 수 있습니다."
+                : "채팅 기반으로 회의를 정리하고, 종료 시 AI가 요약과 할 일 후보를 정리합니다.")}
           </div>
           {!isDemo ? (
             <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-[12px] leading-6 text-muted">
@@ -667,7 +776,7 @@ export function MeetingRoomSheet({
                 })
               ) : (
                 <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-center text-sm text-muted">
-                  아직 회의 메시지가 없습니다. 첫 메시지로 회의를 시작해 주세요.
+                  아직 회의 메시지가 없습니다. 첫 메시지로 회의를 시작해 보세요.
                 </div>
               )}
             </div>
@@ -679,19 +788,19 @@ export function MeetingRoomSheet({
                 onChange={(event) => setMessageInput(event.target.value)}
                 onKeyDown={handleMessageKeyDown}
                 placeholder={
-                  meeting.isEnded
+                  isMeetingEnded
                     ? "종료된 회의입니다"
                     : isDemo || currentMember
-                      ? "회의 메시지를 입력하세요"
-                      : "팀원 연결 후 채팅을 보낼 수 있어요"
+                      ? "회의 메시지를 입력해 주세요"
+                      : "팀원 연결 후 채팅을 보낼 수 있습니다"
                 }
-                disabled={meeting.isEnded || isSending}
+                disabled={isMeetingEnded || isSending}
                 rows={2}
                 className="min-w-0 flex-1 resize-none rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none transition focus:border-brand disabled:bg-canvas"
               />
               <button
                 type="button"
-                disabled={meeting.isEnded || isSending}
+                disabled={isMeetingEnded || isSending}
                 onClick={() => {
                   void handleSendMessage();
                 }}
@@ -707,19 +816,25 @@ export function MeetingRoomSheet({
               <div>
                 <p className="text-sm font-semibold text-ink">회의 종료 및 AI 요약</p>
                 <p className="mt-1 text-[12px] leading-5 text-muted">
-                  종료 시 회의 메시지를 모아 AI 요약과 결정사항, 할 일 후보를 생성합니다.
+                  진행 중 회의만 종료할 수 있으며, 종료 시 AI가 요약과 할 일 후보를 생성합니다.
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={meeting.isEnded || isEnding}
-                onClick={() => {
-                  void handleEndMeeting();
-                }}
-                className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white shadow-brand disabled:opacity-60"
-              >
-                {meeting.isEnded ? "종료됨" : isEnding ? "종료 중..." : "회의 종료"}
-              </button>
+              {summaryText && isMeetingEnded ? (
+                <span className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                  회의록 생성 완료
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!canEndMeeting || isEnding}
+                  onClick={() => {
+                    void handleEndMeeting();
+                  }}
+                  className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white shadow-brand disabled:opacity-60"
+                >
+                  {isEnding ? "종료 중..." : "회의 종료"}
+                </button>
+              )}
             </div>
           </section>
 
@@ -773,15 +888,16 @@ export function MeetingRoomSheet({
               ) : null}
 
               <div className="rounded-[1.75rem] border border-line bg-white p-4 shadow-soft">
-                <p className="text-sm font-semibold text-ink">할 일 후보</p>
+                <p className="text-sm font-semibold text-ink">AI 할 일 후보</p>
                 <p className="mt-1 text-[12px] leading-5 text-muted">
-                  체크한 항목만 Tasks 보드로 전송됩니다.
+                  체크한 항목만 Tasks 보드로 전송합니다.
                 </p>
                 <div className="mt-3 space-y-3">
                   {actionItems.length > 0 ? (
                     actionItems.map((item, index) => {
                       const key = buildActionKey(item, index);
                       const checked = selectedActionKeys.includes(key);
+                      const isTransferred = importedActionKeys.includes(key);
 
                       return (
                         <label
@@ -791,6 +907,7 @@ export function MeetingRoomSheet({
                           <input
                             type="checkbox"
                             checked={checked}
+                            disabled={isTransferred || isImporting}
                             onChange={(event) => {
                               setSelectedActionKeys((current) =>
                                 event.target.checked
@@ -801,9 +918,16 @@ export function MeetingRoomSheet({
                             className="mt-1 h-4 w-4 rounded border-line text-brand"
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="text-[13px] font-semibold text-ink">{item.title}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-[13px] font-semibold text-ink">{item.title}</p>
+                              {isTransferred ? (
+                                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                  업무로 등록됨
+                                </span>
+                              ) : null}
+                            </div>
                             <p className="mt-1 text-[12px] text-muted">
-                              추천 담당자: {item.assigneeName || "미지정"} · 마감 +
+                              추천 담당자 {item.assigneeName || "미지정"} · 마감 +
                               {item.dueDateOffsetDays}일
                             </p>
                           </div>
@@ -825,7 +949,7 @@ export function MeetingRoomSheet({
                   }}
                   className="mt-4 w-full rounded-2xl border border-line bg-white px-4 py-4 text-sm font-semibold text-ink shadow-soft disabled:opacity-60"
                 >
-                  {isImporting ? "Tasks 전송 중..." : "선택한 할 일만 Tasks로 전송"}
+                  {isImporting ? "Tasks 전송 중..." : "선택한 항목만 Tasks로 전송"}
                 </button>
               </div>
             </section>

@@ -1,20 +1,22 @@
-import { Task, TeamMember } from "@/types/carrymate";
-import { TeamMemberRow } from "@/lib/supabase/team-members";
-import { TaskRow } from "@/lib/supabase/tasks";
-import { TeamRow } from "@/lib/supabase/teams";
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
-import {
-  ConfirmedMeeting,
-  MeetingActionItem,
-  MeetingMessage,
-  MeetingNote,
-  Project,
-} from "@/types/carrymate";
 import {
   MeetingMessageRow,
   MeetingNoteRow,
   MeetingRow,
 } from "@/lib/supabase/meetings";
+import { TaskRow } from "@/lib/supabase/tasks";
+import { TeamMemberRow } from "@/lib/supabase/team-members";
+import { TeamRow } from "@/lib/supabase/teams";
+import {
+  ConfirmedMeeting,
+  MeetingActionItem,
+  MeetingMessage,
+  MeetingNote,
+  MeetingStatus,
+  Project,
+  Task,
+  TeamMember,
+} from "@/types/carrymate";
 
 export function isUuid(value: string | null | undefined) {
   if (!value) {
@@ -117,22 +119,47 @@ function formatMeetingTime(value: string) {
   });
 }
 
+export function getMeetingStatus(input: {
+  startsAt?: string | null;
+  endsAt?: string | null;
+}): MeetingStatus {
+  const startsAtValue = input.startsAt ? new Date(input.startsAt) : null;
+  if (startsAtValue && !Number.isNaN(startsAtValue.getTime())) {
+    if (startsAtValue.getTime() > Date.now()) {
+      return "scheduled";
+    }
+  }
+
+  if (input.endsAt) {
+    return "ended";
+  }
+
+  return "inProgress";
+}
+
 export function mapMeetingRowToConfirmedMeeting(row: MeetingRow): ConfirmedMeeting {
-  const isEnded =
-    Boolean(row.ends_at) &&
-    new Date(row.ends_at as string).getTime() <= Date.now();
+  const status = getMeetingStatus({
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+  });
+  const endLabel = row.ends_at
+    ? formatMeetingTime(row.ends_at)
+    : status === "scheduled"
+      ? "예정"
+      : "진행 중";
 
   return {
     id: row.id,
     title: row.title,
     dateLabel: formatMeetingDateLabel(row.starts_at),
-    timeRange: `${formatMeetingTime(row.starts_at)} - ${row.ends_at ? formatMeetingTime(row.ends_at) : "진행 중"}`,
+    timeRange: `${formatMeetingTime(row.starts_at)} - ${endLabel}`,
     attendeeCount: 0,
+    status,
     createdByMemberId: row.created_by,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     teamId: row.team_id,
-    isEnded,
+    isEnded: status === "ended",
   };
 }
 
@@ -171,7 +198,7 @@ function normalizeActionItemList(value: unknown): MeetingActionItem[] {
   }
 
   return value
-    .map((item) => {
+    .map<MeetingActionItem | null>((item) => {
       if (!item || typeof item !== "object") {
         return null;
       }
@@ -191,9 +218,16 @@ function normalizeActionItemList(value: unknown): MeetingActionItem[] {
           Number.isFinite(record.dueDateOffsetDays)
             ? Math.round(record.dueDateOffsetDays)
             : 3,
+        transferred: record.transferred === true,
+        taskId:
+          typeof record.taskId === "string"
+            ? record.taskId
+            : record.taskId === null
+              ? null
+              : undefined,
       };
     })
-    .filter((item): item is MeetingActionItem => Boolean(item));
+    .filter((item): item is MeetingActionItem => item !== null);
 }
 
 export function mapMeetingNoteRowToMeetingNote(row: MeetingNoteRow): MeetingNote {

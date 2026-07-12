@@ -4,6 +4,7 @@ export type HealthStatus = "safe" | "warning" | "risk";
 export type TaskStatus = "todo" | "inProgress" | "done";
 export type TaskPriority = "high" | "medium" | "low";
 export type FileCategory = "minutes" | "materials" | "links";
+export type MeetingStatus = "scheduled" | "inProgress" | "ended";
 
 export type Project = {
   id: string;
@@ -54,6 +55,7 @@ export type ConfirmedMeeting = {
   dateLabel: string;
   timeRange: string;
   attendeeCount: number;
+  status: MeetingStatus;
   createdByMemberId?: string | null;
   startsAt?: string;
   endsAt?: string | null;
@@ -69,6 +71,8 @@ export type MeetingActionItem = {
   title: string;
   assigneeName: string;
   dueDateOffsetDays: number;
+  transferred?: boolean;
+  taskId?: string | null;
 };
 
 export type MeetingMessage = {

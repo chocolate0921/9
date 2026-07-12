@@ -142,7 +142,9 @@ export const initialConfirmedMeetings: ConfirmedMeeting[] = [
     dateLabel: "오늘",
     timeRange: "20:30 - 21:00",
     attendeeCount: 4,
+    status: "inProgress",
     createdByMemberId: "member-1",
+    isEnded: false,
   },
 ];
 
