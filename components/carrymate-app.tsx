@@ -25,6 +25,12 @@ import {
   getMeetingsByTeam,
 } from "@/lib/supabase/meetings";
 import {
+  getAvailabilityByTeam,
+  normalizeAvailabilityTime,
+  replaceMemberAvailability,
+  type TeamAvailabilityEntry,
+} from "@/lib/supabase/availability";
+import {
   createTask,
   getTasksByTeam,
   updateTaskFields,
@@ -79,6 +85,11 @@ type OnboardingSheetMode =
   | "shareInvite"
   | null;
 type AuthMode = "signIn" | "signUp";
+type MeetingDraftInput = {
+  title: string;
+  startsAt: string;
+  endsAt: string;
+};
 
 type ProjectSummary = {
   totalCount: number;
@@ -101,6 +112,20 @@ const SKILL_POOL = ["정리형", "리서치형", "비주얼형", "문서형"];
 const DEMO_INVITE_CODE = "CARRY2026";
 const LAST_TEAM_ID_STORAGE_KEY = "carrymate:last-team-id";
 const LAST_TAB_STORAGE_KEY = "carrymate:last-tab";
+const AVAILABILITY_DAY_LABELS = ["월", "화", "수", "목", "금"];
+
+function buildAvailabilityKey(day: number, time: string) {
+  return `${day}|${normalizeAvailabilityTime(time)}`;
+}
+
+function formatAvailabilityLabel(day: number, time: string) {
+  const normalizedTime = normalizeAvailabilityTime(time);
+  if (!normalizedTime || day < 0 || day >= AVAILABILITY_DAY_LABELS.length) {
+    return "";
+  }
+
+  return `${AVAILABILITY_DAY_LABELS[day]} ${normalizedTime}`;
+}
 
 function getTaskDueAt(daysFromToday: number, hour = 18) {
   const date = new Date();
@@ -274,11 +299,20 @@ export function CarryMateApp({
     null,
   );
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
+  const [meetingDraftPreset, setMeetingDraftPreset] = useState<MeetingDraftInput | null>(
+    null,
+  );
   const [myTeams, setMyTeams] = useState<ProfileTeamSummary[]>([]);
   const [myTeamsLoading, setMyTeamsLoading] = useState(false);
   const [myTeamsMessage, setMyTeamsMessage] = useState("");
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
   const [workspaceLoadMessage, setWorkspaceLoadMessage] = useState("");
+  const [teamAvailability, setTeamAvailability] = useState<TeamAvailabilityEntry[]>([]);
+  const [selectedAvailabilityKeys, setSelectedAvailabilityKeys] = useState<string[]>([]);
+  const [initialAvailabilityKeys, setInitialAvailabilityKeys] = useState<string[]>([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [availabilityMessage, setAvailabilityMessage] = useState("");
   const [isRestoringWorkspace, setIsRestoringWorkspace] = useState(
     () => !normalizeInviteCode(initialInviteCode),
   );
@@ -305,6 +339,43 @@ export function CarryMateApp({
   const inviteCode = project.inviteCode || (!hasPersistentProjectId ? DEMO_INVITE_CODE : "");
   const inviteLink = inviteCode ? buildInviteLink(inviteCode) : "";
   const workspaceInviteCode = normalizeInviteCode(initialInviteCode);
+  const editableAvailabilityMember = useMemo(() => {
+    if (currentMember) {
+      return currentMember;
+    }
+
+    if (!hasPersistentProjectId) {
+      return activeMembers[0] ?? null;
+    }
+
+    return null;
+  }, [activeMembers, currentMember, hasPersistentProjectId]);
+  const scheduleMembers = useMemo(() => {
+    if (teamAvailability.length === 0) {
+      return members;
+    }
+
+    const availabilityByMemberId = new Map<string, string[]>();
+    teamAvailability.forEach((entry) => {
+      const current = availabilityByMemberId.get(entry.memberId) ?? [];
+      current.push(formatAvailabilityLabel(entry.day, entry.time));
+      availabilityByMemberId.set(entry.memberId, current);
+    });
+
+    return members.map((member) => ({
+      ...member,
+      availability: availabilityByMemberId.get(member.id) ?? member.availability,
+    }));
+  }, [members, teamAvailability]);
+  const hasAvailabilityChanges = useMemo(() => {
+    if (selectedAvailabilityKeys.length !== initialAvailabilityKeys.length) {
+      return true;
+    }
+
+    return selectedAvailabilityKeys.some(
+      (key, index) => key !== initialAvailabilityKeys[index],
+    );
+  }, [initialAvailabilityKeys, selectedAvailabilityKeys]);
 
   useEffect(() => {
     tasksRef.current = tasks;
@@ -652,6 +723,91 @@ export function CarryMateApp({
       cancelled = true;
     };
   }, [authenticatedUser?.id, hasPersistentProjectId, project.id]);
+
+  useEffect(() => {
+    if (!hasPersistentProjectId) {
+      const demoMember = editableAvailabilityMember;
+      const demoKeys = demoMember
+        ? [...new Set(demoMember.availability.map((value) => {
+            const [dayLabel, time] = value.split(" ");
+            const day = AVAILABILITY_DAY_LABELS.indexOf(dayLabel);
+            return day >= 0 ? buildAvailabilityKey(day, time ?? "") : "";
+          }).filter(Boolean))].sort()
+        : [];
+      setTeamAvailability(
+        activeMembers.flatMap((member) =>
+          member.availability.flatMap((value) => {
+            const [dayLabel, time] = value.split(" ");
+            const day = AVAILABILITY_DAY_LABELS.indexOf(dayLabel);
+            const normalizedTime = normalizeAvailabilityTime(time ?? "");
+            if (day < 0 || !normalizedTime) {
+              return [];
+            }
+
+            return [
+              {
+                memberId: member.id,
+                memberName: member.name,
+                day,
+                time: normalizedTime,
+              },
+            ];
+          }),
+        ),
+      );
+      setSelectedAvailabilityKeys(demoKeys);
+      setInitialAvailabilityKeys(demoKeys);
+      setAvailabilityLoading(false);
+      setAvailabilityMessage("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAvailability = async () => {
+      setAvailabilityLoading(true);
+      setAvailabilityMessage("공강 불러오는 중");
+      const result = await getAvailabilityByTeam(project.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      setAvailabilityLoading(false);
+
+      if (!result.ok || !result.data) {
+        setTeamAvailability([]);
+        setAvailabilityMessage(result.message);
+        return;
+      }
+
+      setTeamAvailability(result.data);
+      setAvailabilityMessage("");
+    };
+
+    void loadAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMembers, editableAvailabilityMember, hasPersistentProjectId, project.id]);
+
+  useEffect(() => {
+    const targetMember = editableAvailabilityMember;
+    if (!targetMember) {
+      setSelectedAvailabilityKeys([]);
+      setInitialAvailabilityKeys([]);
+      return;
+    }
+
+    const memberKeys = teamAvailability
+      .filter((entry) => entry.memberId === targetMember.id)
+      .map((entry) => buildAvailabilityKey(entry.day, entry.time))
+      .sort();
+
+    setSelectedAvailabilityKeys(memberKeys);
+    setInitialAvailabilityKeys(memberKeys);
+  }, [editableAvailabilityMember, teamAvailability]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1372,8 +1528,22 @@ export function CarryMateApp({
     return false;
   };
 
-  const openSheet = (mode: WorkspaceSheetMode) => setSheetMode(mode);
-  const closeSheet = () => setSheetMode(null);
+  const openSheet = (
+    mode: WorkspaceSheetMode,
+    options?: {
+      meetingPreset?: MeetingDraftInput | null;
+    },
+  ) => {
+    if (mode === "meeting") {
+      setMeetingDraftPreset(options?.meetingPreset ?? null);
+    }
+
+    setSheetMode(mode);
+  };
+  const closeSheet = () => {
+    setSheetMode(null);
+    setMeetingDraftPreset(null);
+  };
 
   const handleAddTask = (title: string) => {
     // 새 업무 추가 시 현재 active 멤버 중 한 명에게 바로 배정해
@@ -1701,6 +1871,80 @@ export function CarryMateApp({
     );
   };
 
+  const handleToggleAvailability = (day: number, time: string) => {
+    const key = buildAvailabilityKey(day, time);
+    if (!key) {
+      return;
+    }
+
+    setSelectedAvailabilityKeys((current) => {
+      const next = current.includes(key)
+        ? current.filter((value) => value !== key)
+        : [...current, key];
+
+      return next.sort();
+    });
+  };
+
+  const handleSaveAvailability = async () => {
+    const targetMember = editableAvailabilityMember;
+    if (!targetMember) {
+      setAvailabilityMessage("공강 시간을 저장하려면 팀원 연결이 필요합니다.");
+      return;
+    }
+
+    const slots = selectedAvailabilityKeys
+      .map((key) => {
+        const [day, time] = key.split("|");
+        const dayOfWeek = Number(day);
+        const normalizedTime = normalizeAvailabilityTime(time ?? "");
+        if (Number.isNaN(dayOfWeek) || !normalizedTime) {
+          return null;
+        }
+
+        return {
+          dayOfWeek,
+          timeSlot: normalizedTime,
+        };
+      })
+      .filter((slot): slot is { dayOfWeek: number; timeSlot: string } => Boolean(slot));
+
+    if (!hasPersistentProjectId || !currentMember) {
+      const nextLabels = slots
+        .map((slot) => formatAvailabilityLabel(slot.dayOfWeek, slot.timeSlot))
+        .filter(Boolean);
+
+      setMembers((current) =>
+        current.map((member) =>
+          member.id === targetMember.id
+            ? { ...member, availability: nextLabels }
+            : member,
+        ),
+      );
+      setAvailabilityMessage("✅ 저장되었습니다.");
+      return;
+    }
+
+    setAvailabilitySaving(true);
+    setAvailabilityMessage("저장 중");
+    const result = await replaceMemberAvailability(currentMember.id, slots);
+    setAvailabilitySaving(false);
+
+    if (!result.ok) {
+      setAvailabilityMessage(result.message);
+      return;
+    }
+
+    const reloadResult = await getAvailabilityByTeam(project.id);
+    if (!reloadResult.ok || !reloadResult.data) {
+      setAvailabilityMessage(reloadResult.message);
+      return;
+    }
+
+    setTeamAvailability(reloadResult.data);
+    setAvailabilityMessage("✅ 저장되었습니다.");
+  };
+
   const handleImportMeetingActionItems = async (
     meeting: ConfirmedMeeting,
     items: Array<{ key: string; item: MeetingActionItem }>,
@@ -1908,6 +2152,7 @@ export function CarryMateApp({
     if (sheetMode === "meeting") {
       return (
         <MeetingCreateSheet
+          initialValues={meetingDraftPreset}
           onClose={closeSheet}
           onSubmit={handleCreateMeeting}
         />
@@ -2228,13 +2473,26 @@ export function CarryMateApp({
           )}
           {activeTab === "schedule" && (
             <ScheduleTab
-              members={members}
+              members={scheduleMembers}
               slots={scheduleSlots}
               meetings={confirmedMeetings}
               onAddSchedule={() => openSheet("schedule")}
-              onCreateMeeting={() => openSheet("meeting")}
+              onCreateMeeting={(preset) =>
+                openSheet("meeting", {
+                  meetingPreset: preset ?? null,
+                })
+              }
               onConfirmSlot={handleConfirmSlot}
               onOpenMeeting={setActiveMeetingId}
+              editableMember={editableAvailabilityMember}
+              selectedAvailabilityKeys={selectedAvailabilityKeys}
+              teamAvailability={teamAvailability}
+              availabilityLoading={availabilityLoading}
+              availabilitySaving={availabilitySaving}
+              availabilityMessage={availabilityMessage}
+              hasAvailabilityChanges={hasAvailabilityChanges}
+              onToggleAvailability={handleToggleAvailability}
+              onSaveAvailability={handleSaveAvailability}
             />
           )}
           {activeTab === "files" && (
@@ -3076,9 +3334,15 @@ function QuickActionSheet({
 }
 
 function MeetingCreateSheet({
+  initialValues,
   onClose,
   onSubmit,
 }: {
+  initialValues?: {
+    title: string;
+    startsAt: string;
+    endsAt: string;
+  } | null;
   onClose: () => void;
   onSubmit: (input: {
     title: string;
@@ -3091,6 +3355,13 @@ function MeetingCreateSheet({
   const [endsAt, setEndsAt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setTitle(initialValues?.title ?? "");
+    setStartsAt(initialValues?.startsAt ?? "");
+    setEndsAt(initialValues?.endsAt ?? "");
+    setMessage("");
+  }, [initialValues]);
 
   return (
     <SheetShell title="회의 만들기" onClose={onClose}>

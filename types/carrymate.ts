@@ -49,6 +49,13 @@ export type ScheduleSlot = {
   recommended: boolean;
 };
 
+export type TeamAvailabilityEntry = {
+  memberId: string;
+  memberName: string;
+  day: number;
+  time: string;
+};
+
 export type ConfirmedMeeting = {
   id: string;
   title: string;

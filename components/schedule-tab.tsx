@@ -1,7 +1,23 @@
-import { useMemo, useState } from "react";
-import { ConfirmedMeeting, ScheduleSlot, TeamMember } from "@/types/carrymate";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ConfirmedMeeting,
+  ScheduleSlot,
+  TeamAvailabilityEntry,
+  TeamMember,
+} from "@/types/carrymate";
 
 type AttendanceStatus = "attending" | "late" | "absent";
+type MeetingPresetInput = {
+  title: string;
+  startsAt: string;
+  endsAt: string;
+};
+type PeriodOption = {
+  id: number;
+  label: string;
+  start: string;
+  end: string;
+};
 
 const ATTENDANCE_ORDER: AttendanceStatus[] = ["attending", "late", "absent"];
 const ATTENDANCE_META: Record<
@@ -34,6 +50,194 @@ const MEETING_STATUS_META = {
   },
 } as const;
 
+const DAY_LABELS = ["월", "화", "수", "목", "금"];
+const DAY_NAME_BY_FULL = ["월요일", "화요일", "수요일", "목요일", "금요일"];
+const BASE_PERIODS: PeriodOption[] = [
+  { id: 1, label: "1교시", start: "09:00", end: "10:00" },
+  { id: 2, label: "2교시", start: "10:00", end: "11:00" },
+  { id: 3, label: "3교시", start: "11:00", end: "12:00" },
+  { id: 4, label: "4교시", start: "12:00", end: "13:00" },
+  { id: 5, label: "5교시", start: "13:00", end: "14:00" },
+  { id: 6, label: "6교시", start: "14:00", end: "15:00" },
+  { id: 7, label: "7교시", start: "15:00", end: "16:00" },
+  { id: 8, label: "8교시", start: "16:00", end: "17:00" },
+  { id: 9, label: "9교시", start: "17:00", end: "18:00" },
+];
+const NIGHT_PERIODS: PeriodOption[] = [
+  { id: 10, label: "10교시", start: "18:00", end: "19:00" },
+  { id: 11, label: "11교시", start: "19:00", end: "20:00" },
+  { id: 12, label: "12교시", start: "20:00", end: "21:00" },
+];
+const ALL_PERIODS = [...BASE_PERIODS, ...NIGHT_PERIODS];
+
+function buildAvailabilityKey(day: number, time: string) {
+  return `${day}|${time}`;
+}
+
+function parseRecommendedDayIndex(dateLabel: string) {
+  for (const [index, dayLabel] of DAY_LABELS.entries()) {
+    if (dateLabel.includes(dayLabel)) {
+      return index;
+    }
+  }
+
+  if (dateLabel.includes("오늘")) {
+    const today = new Date().getDay();
+    if (today >= 1 && today <= 5) {
+      return today - 1;
+    }
+  }
+
+  return null;
+}
+
+function parseRangeStart(timeRange: string) {
+  const start = timeRange.split("-")[0]?.trim() ?? "";
+  return /^\d{2}:\d{2}$/.test(start) ? start : "";
+}
+
+function parseRangeEnd(timeRange: string) {
+  const end = timeRange.split("-")[1]?.trim() ?? "";
+  return /^\d{2}:\d{2}$/.test(end) ? end : "";
+}
+
+function getRecommendedKeys(slot: ScheduleSlot) {
+  const dayIndex = parseRecommendedDayIndex(slot.dateLabel);
+  const start = parseRangeStart(slot.timeRange);
+  const end = parseRangeEnd(slot.timeRange);
+
+  if (dayIndex === null || !start || !end) {
+    return [];
+  }
+
+  return ALL_PERIODS.flatMap((period) =>
+    period.start >= start && period.start < end
+      ? [buildAvailabilityKey(dayIndex, period.start)]
+      : [],
+  );
+}
+
+function findDayNameByKeys(keys: string[]) {
+  const counts = new Map<number, number>();
+
+  keys.forEach((key) => {
+    const [day] = key.split("|");
+    const dayIndex = Number(day);
+    if (Number.isNaN(dayIndex) || dayIndex < 0 || dayIndex > 4) {
+      return;
+    }
+
+    counts.set(dayIndex, (counts.get(dayIndex) ?? 0) + 1);
+  });
+
+  if (counts.size === 0) {
+    return "없음";
+  }
+
+  const sorted = [...counts.entries()].sort((left, right) => {
+    if (right[1] !== left[1]) {
+      return right[1] - left[1];
+    }
+
+    return left[0] - right[0];
+  });
+
+  return DAY_NAME_BY_FULL[sorted[0][0]];
+}
+
+function findLeastDayName(keys: string[]) {
+  if (keys.length === 0) {
+    return "없음";
+  }
+
+  const counts = DAY_LABELS.map((_, index) => ({
+    dayIndex: index,
+    count: 0,
+  }));
+
+  keys.forEach((key) => {
+    const [day] = key.split("|");
+    const dayIndex = Number(day);
+    if (Number.isNaN(dayIndex) || dayIndex < 0 || dayIndex > 4) {
+      return;
+    }
+
+    counts[dayIndex].count += 1;
+  });
+
+  counts.sort((left, right) => {
+    if (left.count !== right.count) {
+      return left.count - right.count;
+    }
+
+    return left.dayIndex - right.dayIndex;
+  });
+
+  return DAY_NAME_BY_FULL[counts[0].dayIndex];
+}
+
+function getPeriodLabelFromRange(timeRange: string) {
+  const start = parseRangeStart(timeRange);
+  const end = parseRangeEnd(timeRange);
+  if (!start || !end) {
+    return timeRange;
+  }
+
+  const matched = ALL_PERIODS.filter(
+    (period) => period.start >= start && period.start < end,
+  );
+  if (matched.length === 0) {
+    return timeRange;
+  }
+
+  if (matched.length === 1) {
+    return matched[0].label;
+  }
+
+  return `${matched[0].label} ~ ${matched[matched.length - 1].label}`;
+}
+
+function getPresetForSlot(slot: ScheduleSlot): MeetingPresetInput | null {
+  const dayIndex = parseRecommendedDayIndex(slot.dateLabel);
+  const start = parseRangeStart(slot.timeRange);
+  const end = parseRangeEnd(slot.timeRange);
+
+  if (dayIndex === null || !start || !end) {
+    return null;
+  }
+
+  const now = new Date();
+  const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const currentDay = baseDate.getDay();
+  const targetDay = dayIndex + 1;
+  const offset = (targetDay - currentDay + 7) % 7;
+  baseDate.setDate(baseDate.getDate() + offset);
+
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+
+  const startsAt = new Date(baseDate);
+  startsAt.setHours(startHour, startMinute, 0, 0);
+
+  const endsAt = new Date(baseDate);
+  endsAt.setHours(endHour, endMinute, 0, 0);
+
+  const toInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hour = String(date.getHours()).padStart(2, "0");
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  };
+
+  return {
+    title: slot.label,
+    startsAt: toInput(startsAt),
+    endsAt: toInput(endsAt),
+  };
+}
+
 export function ScheduleTab({
   meetings,
   members,
@@ -42,14 +246,32 @@ export function ScheduleTab({
   onCreateMeeting,
   onOpenMeeting,
   slots,
+  editableMember,
+  selectedAvailabilityKeys,
+  teamAvailability,
+  availabilityLoading,
+  availabilitySaving,
+  availabilityMessage,
+  hasAvailabilityChanges,
+  onToggleAvailability,
+  onSaveAvailability,
 }: {
   meetings: ConfirmedMeeting[];
   members: TeamMember[];
   onAddSchedule: () => void;
   onConfirmSlot: (slotId: string) => void;
-  onCreateMeeting: () => void;
+  onCreateMeeting: (preset?: MeetingPresetInput) => void;
   onOpenMeeting: (meetingId: string) => void;
   slots: ScheduleSlot[];
+  editableMember: TeamMember | null;
+  selectedAvailabilityKeys: string[];
+  teamAvailability: TeamAvailabilityEntry[];
+  availabilityLoading: boolean;
+  availabilitySaving: boolean;
+  availabilityMessage: string;
+  hasAvailabilityChanges: boolean;
+  onToggleAvailability: (day: number, time: string) => void;
+  onSaveAvailability: () => void;
 }) {
   const activeMembers = useMemo(
     () => members.filter((member) => member.status === "active"),
@@ -59,6 +281,87 @@ export function ScheduleTab({
     {},
   );
   const [rules, setRules] = useState(INITIAL_RULES);
+  const [showNightPeriods, setShowNightPeriods] = useState(false);
+  const [rangeAnchor, setRangeAnchor] = useState<{
+    dayIndex: number;
+    periodIndex: number;
+  } | null>(null);
+  const [localToast, setLocalToast] = useState("");
+  const selectedAvailabilitySet = useMemo(
+    () => new Set(selectedAvailabilityKeys),
+    [selectedAvailabilityKeys],
+  );
+  const visiblePeriods = showNightPeriods ? ALL_PERIODS : BASE_PERIODS;
+  const availabilityCountByKey = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    teamAvailability.forEach((entry) => {
+      const key = buildAvailabilityKey(entry.day, entry.time);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+
+    return counts;
+  }, [teamAvailability]);
+  const recommendedSlots = useMemo(
+    () => slots.filter((slot) => slot.recommended),
+    [slots],
+  );
+  const recommendedAvailabilityKeys = useMemo(() => {
+    const set = new Set<string>();
+
+    recommendedSlots.forEach((slot) => {
+      getRecommendedKeys(slot).forEach((key) => set.add(key));
+    });
+
+    return set;
+  }, [recommendedSlots]);
+  const teamAvailabilityStats = useMemo(() => {
+    const counts = [...availabilityCountByKey.entries()];
+    const totalMembers = activeMembers.length;
+    const allMemberCount =
+      totalMembers > 0
+        ? counts.filter(([, count]) => count === totalMembers).length
+        : 0;
+    const threePlusCount = counts.filter(([, count]) => count >= 3).length;
+    const topRecommendation = recommendedSlots[0] ?? null;
+
+    return {
+      allMemberCount,
+      threePlusCount,
+      topRecommendation,
+    };
+  }, [activeMembers.length, availabilityCountByKey, recommendedSlots]);
+  const myAvailabilityStats = useMemo(() => {
+    const selected = [...selectedAvailabilitySet];
+
+    return {
+      total: selected.length,
+      busiestDay: findDayNameByKeys(selected),
+      quietDay: findLeastDayName(selected),
+    };
+  }, [selectedAvailabilitySet]);
+
+  useEffect(() => {
+    if (!availabilityMessage.startsWith("✅")) {
+      return;
+    }
+
+    setLocalToast(availabilityMessage);
+  }, [availabilityMessage]);
+
+  useEffect(() => {
+    if (!localToast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setLocalToast("");
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [localToast]);
 
   const cycleAttendance = (meetingId: string, memberId: string) => {
     const key = `${meetingId}-${memberId}`;
@@ -70,8 +373,52 @@ export function ScheduleTab({
     setAttendanceMap((prev) => ({ ...prev, [key]: next }));
   };
 
+  const handlePeriodClick = (dayIndex: number, periodIndex: number) => {
+    const period = visiblePeriods[periodIndex];
+    if (!period) {
+      return;
+    }
+
+    if (!rangeAnchor || rangeAnchor.dayIndex !== dayIndex) {
+      onToggleAvailability(dayIndex, period.start);
+      setRangeAnchor({ dayIndex, periodIndex });
+      return;
+    }
+
+    if (rangeAnchor.periodIndex === periodIndex) {
+      setRangeAnchor(null);
+      return;
+    }
+
+    const startIndex = Math.min(rangeAnchor.periodIndex, periodIndex);
+    const endIndex = Math.max(rangeAnchor.periodIndex, periodIndex);
+    const rangeKeys = visiblePeriods
+      .slice(startIndex, endIndex + 1)
+      .map((item) => buildAvailabilityKey(dayIndex, item.start));
+    const allSelected = rangeKeys.every((key) => selectedAvailabilitySet.has(key));
+
+    visiblePeriods.slice(startIndex, endIndex + 1).forEach((item) => {
+      const key = buildAvailabilityKey(dayIndex, item.start);
+      const shouldToggle =
+        (allSelected && selectedAvailabilitySet.has(key)) ||
+        (!allSelected && !selectedAvailabilitySet.has(key));
+
+      if (shouldToggle) {
+        onToggleAvailability(dayIndex, item.start);
+      }
+    });
+
+    setRangeAnchor(null);
+  };
+
   return (
     <div className="space-y-4 pb-4">
+      {localToast ? (
+        <div className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full bg-[#1f2937] px-4 py-2 text-[12px] font-semibold text-white shadow-lg">
+          {localToast}
+        </div>
+      ) : null}
+
       <section className="rounded-[26px] border-l-4 border-[#6259e8] bg-white p-5 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -82,7 +429,7 @@ export function ScheduleTab({
           </div>
           <div className="flex flex-col gap-2">
             <button
-              onClick={onCreateMeeting}
+              onClick={() => onCreateMeeting()}
               className="rounded-full bg-[#6259e8] px-3 py-2 text-[11px] font-bold text-white"
             >
               + 회의
@@ -101,58 +448,205 @@ export function ScheduleTab({
         </div>
       </section>
 
-      <section className="rounded-[26px] bg-white p-6 text-center shadow-panel">
-        <Ring value={Math.min(100, 65 + meetings.length * 5)} />
-        <h3 className="mt-4 text-[16px] font-extrabold text-[#2d293b]">회의 준비도</h3>
-        <p className="mt-2 text-[11px] leading-5 text-[#938ca1]">
-          확정된 일정과 회의 수를 기준으로 현재 준비 상태를 보여줍니다.
-        </p>
+      <section className="rounded-[26px] border border-[#eeeaf7] bg-white p-4 shadow-card">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold text-[#7b74ee]">내 공강 시간 입력</p>
+            <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b]">
+              {editableMember
+                ? `${editableMember.name}님의 공강 시간`
+                : "공강 시간을 입력하려면 팀원 연결이 필요합니다"}
+            </h3>
+            <p className="mt-2 text-[11px] leading-5 text-[#938ca1]">
+              시작 교시와 마지막 교시를 선택하면 사이 시간이 자동으로 선택됩니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocalToast("추후 업데이트 예정입니다.")}
+            className="rounded-2xl border border-[#dcd6ff] bg-white px-3 py-2 text-[10px] font-bold text-[#6259e8]"
+          >
+            에브리타임 시간표 가져오기
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-[1.55fr,0.9fr]">
+          <div className="rounded-[22px] border border-[#eeeaf7] bg-[#faf9ff] p-3">
+            <div className="grid grid-cols-[44px_repeat(5,minmax(0,1fr))] gap-1">
+              <div />
+              {DAY_LABELS.map((day) => (
+                <div
+                  key={day}
+                  className="rounded-lg bg-white px-1 py-2 text-center text-[10px] font-extrabold text-[#6259e8]"
+                >
+                  {day}
+                </div>
+              ))}
+
+              {visiblePeriods.map((period, periodIndex) => (
+                <PeriodRow
+                  key={period.id}
+                  counts={availabilityCountByKey}
+                  disabled={!editableMember || availabilitySaving}
+                  period={period}
+                  periodIndex={periodIndex}
+                  rangeAnchor={rangeAnchor}
+                  recommendedKeys={recommendedAvailabilityKeys}
+                  selectedKeys={selectedAvailabilitySet}
+                  onClick={handlePeriodClick}
+                />
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowNightPeriods((current) => !current)}
+                className="rounded-full border border-[#dcd6ff] bg-white px-3 py-2 text-[10px] font-bold text-[#6259e8]"
+              >
+                {showNightPeriods ? "야간 교시 숨기기" : "야간 교시 보기"}
+              </button>
+              <p className="text-[10px] font-semibold text-[#938ca1]">
+                {availabilityLoading
+                  ? "공강 불러오는 중"
+                  : hasAvailabilityChanges
+                    ? "저장되지 않은 변경사항이 있습니다."
+                    : "저장된 공강 상태입니다."}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <StatCard
+              title="내 공강 현황"
+              rows={[
+                { label: "총 공강", value: `${myAvailabilityStats.total}교시` },
+                { label: "가장 공강이 많은 요일", value: myAvailabilityStats.busiestDay },
+                { label: "가장 공강이 적은 요일", value: myAvailabilityStats.quietDay },
+              ]}
+            />
+            <StatCard
+              title="팀 공강"
+              rows={[
+                {
+                  label: "전체 팀원이 가능한 시간",
+                  value: `${teamAvailabilityStats.allMemberCount}개`,
+                },
+                {
+                  label: "3명 이상 가능한 시간",
+                  value: `${teamAvailabilityStats.threePlusCount}개`,
+                },
+                {
+                  label: "추천 시간",
+                  value: teamAvailabilityStats.topRecommendation
+                    ? `${teamAvailabilityStats.topRecommendation.dateLabel} ${getPeriodLabelFromRange(teamAvailabilityStats.topRecommendation.timeRange)}`
+                    : "없음",
+                },
+              ]}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-bold">
+          <LegendChip className="border border-emerald-500 bg-emerald-500 text-white" label="내 공강" />
+          <LegendChip className="border border-blue-200 bg-blue-100 text-blue-700" label="팀원 공강" />
+          <LegendChip className="border border-[#e7e2f0] bg-white text-[#938ca1]" label="미입력" />
+          <LegendChip className="border border-[#6259e8] bg-[#6259e8] text-white" label="추천 시간" />
+        </div>
+
+        {availabilityMessage && !availabilityMessage.startsWith("✅") ? (
+          <p className="mt-4 rounded-2xl bg-[#faf9ff] px-4 py-3 text-[12px] leading-6 text-[#5d5768]">
+            {availabilityMessage}
+          </p>
+        ) : null}
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-[12px] font-semibold text-[#938ca1]">
+            {hasAvailabilityChanges
+              ? "저장되지 않은 변경사항이 있습니다."
+              : "선택한 공강 시간이 저장된 상태와 같습니다."}
+          </p>
+          <button
+            type="button"
+            disabled={!editableMember || availabilityLoading || availabilitySaving}
+            onClick={onSaveAvailability}
+            className="rounded-2xl bg-[#6259e8] px-4 py-3 text-[12px] font-bold text-white disabled:opacity-60"
+          >
+            {availabilitySaving ? "저장 중..." : "공강 저장"}
+          </button>
+        </div>
       </section>
 
-      <SectionTitle title="AI 추천 시간대" action="추가" onClick={onAddSchedule} />
+      <SectionTitle title="추천 시간 카드" action="일정 추가" onClick={onAddSchedule} />
       <div className="space-y-3">
-        {slots.length > 0 ? (
-          slots.map((slot) => (
-            <article
-              key={slot.id}
-              className="rounded-[22px] border border-[#eeeaf7] bg-white p-4 shadow-card"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[13px] font-extrabold text-[#332f42]">{slot.label}</p>
-                  <p className="mt-1 text-[11px] text-[#958fa1]">
-                    {slot.dateLabel} · {slot.timeRange}
+        {recommendedSlots.length > 0 ? (
+          recommendedSlots.map((slot, index) => {
+            const availableNames = slot.memberIds
+              .map((memberId) => activeMembers.find((member) => member.id === memberId)?.name)
+              .filter((value): value is string => Boolean(value));
+            const preset = getPresetForSlot(slot);
+            const rating = Math.max(
+              1,
+              Math.min(5, Math.round((availableNames.length / Math.max(activeMembers.length, 1)) * 5)),
+            );
+
+            return (
+              <article
+                key={slot.id}
+                className="rounded-[24px] border border-[#e5ddff] bg-white p-5 shadow-card"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold text-[#7b74ee]">추천 {index + 1}</p>
+                    <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b]">
+                      {slot.dateLabel}
+                    </h3>
+                    <p className="mt-1 text-[13px] font-semibold text-[#6259e8]">
+                      {getPeriodLabelFromRange(slot.timeRange)}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[#6259e8] px-3 py-1 text-[10px] font-bold text-white">
+                    {"★".repeat(rating)}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <InfoTile label="가능 인원" value={`${availableNames.length} / ${activeMembers.length}명 가능`} />
+                  <InfoTile label="추천 이유" value={availableNames.length === activeMembers.length ? "모든 팀원이 참석 가능하며 오후 시간대입니다." : "여러 팀원이 겹치는 시간대라 회의 잡기가 수월합니다."} />
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-[#faf9ff] px-4 py-3">
+                  <p className="text-[11px] font-bold text-[#6259e8]">가능</p>
+                  <p className="mt-2 text-[12px] leading-6 text-[#5d5768]">
+                    {availableNames.length > 0 ? availableNames.join(" · ") : "가능 인원 정보 없음"}
                   </p>
                 </div>
-                {slot.recommended ? (
-                  <span className="rounded-full bg-[#efedff] px-2.5 py-1 text-[9px] font-bold text-[#6259e8]">
-                    추천
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-3 flex -space-x-1.5">
-                {slot.memberIds.slice(0, 4).map((memberId, index) => (
-                  <Avatar
-                    key={memberId}
-                    index={index}
-                    name={activeMembers.find((member) => member.id === memberId)?.name ?? "팀"}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => onConfirmSlot(slot.id)}
-                className="mt-4 w-full rounded-xl bg-[#6259e8] py-2.5 text-[11px] font-bold text-white"
-              >
-                이 시간으로 확정
-              </button>
-            </article>
-          ))
+
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onConfirmSlot(slot.id)}
+                    className="flex-1 rounded-2xl border border-[#dcd6ff] bg-white px-4 py-3 text-[11px] font-bold text-[#6259e8]"
+                  >
+                    추천 확정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onCreateMeeting(preset ?? undefined)}
+                    className="flex-1 rounded-2xl bg-[#6259e8] px-4 py-3 text-[11px] font-bold text-white"
+                  >
+                    회의 만들기
+                  </button>
+                </div>
+              </article>
+            );
+          })
         ) : (
-          <Empty text="추천 가능한 시간대가 아직 없습니다." />
+          <Empty text="추천 가능한 공강 시간이 아직 없습니다." />
         )}
       </div>
 
-      <SectionTitle title="프로젝트 타임라인" action="회의 만들기" onClick={onCreateMeeting} />
+      <SectionTitle title="프로젝트 타임라인" action="회의 만들기" onClick={() => onCreateMeeting()} />
       <div className="space-y-3">
         {meetings.length > 0 ? (
           meetings.map((meeting, index) => {
@@ -257,6 +751,111 @@ export function ScheduleTab({
   );
 }
 
+function PeriodRow({
+  counts,
+  disabled,
+  period,
+  periodIndex,
+  rangeAnchor,
+  recommendedKeys,
+  selectedKeys,
+  onClick,
+}: {
+  counts: Map<string, number>;
+  disabled: boolean;
+  period: PeriodOption;
+  periodIndex: number;
+  rangeAnchor: { dayIndex: number; periodIndex: number } | null;
+  recommendedKeys: Set<string>;
+  selectedKeys: Set<string>;
+  onClick: (dayIndex: number, periodIndex: number) => void;
+}) {
+  return (
+    <>
+      <div className="rounded-lg bg-white px-1 py-2 text-center">
+        <p className="text-[10px] font-extrabold text-[#2d293b]">{period.label}</p>
+        <p className="mt-0.5 text-[8px] leading-3 text-[#938ca1]">
+          {period.start}
+          <br />
+          {period.end}
+        </p>
+      </div>
+      {DAY_LABELS.map((_, dayIndex) => {
+        const key = buildAvailabilityKey(dayIndex, period.start);
+        const count = counts.get(key) ?? 0;
+        const isSelected = selectedKeys.has(key);
+        const isRecommended = recommendedKeys.has(key);
+        const isAnchor =
+          rangeAnchor?.dayIndex === dayIndex && rangeAnchor.periodIndex === periodIndex;
+
+        let className =
+          "border-[#e7e2f0] bg-white text-[#938ca1]";
+
+        if (isSelected) {
+          className = "border-emerald-500 bg-emerald-500 text-white";
+        } else if (isRecommended) {
+          className = "border-[#6259e8] bg-[#6259e8] text-white";
+        } else if (count > 0) {
+          className = "border-blue-200 bg-blue-100 text-blue-700";
+        }
+
+        return (
+          <button
+            key={key}
+            type="button"
+            disabled={disabled}
+            onClick={() => onClick(dayIndex, periodIndex)}
+            className={`relative flex h-11 items-center justify-center rounded-lg border text-[10px] font-extrabold transition ${className} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} disabled:opacity-60`}
+          >
+            {isSelected ? "" : isRecommended ? "★" : count > 0 ? count : ""}
+            {isSelected && isRecommended ? (
+              <span className="absolute right-1 top-1 text-[9px] text-white">★</span>
+            ) : null}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function StatCard({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+}) {
+  return (
+    <section className="rounded-[22px] border border-[#eeeaf7] bg-white p-4 shadow-card">
+      <p className="text-[11px] font-bold text-[#7b74ee]">{title}</p>
+      <div className="mt-3 space-y-3">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="rounded-2xl bg-[#faf9ff] px-3 py-3"
+          >
+            <p className="text-[10px] font-semibold text-[#938ca1]">{row.label}</p>
+            <p className="mt-1 text-[13px] font-extrabold text-[#2d293b]">{row.value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-[#faf9ff] px-4 py-3">
+      <p className="text-[10px] font-bold text-[#7b74ee]">{label}</p>
+      <p className="mt-2 text-[12px] leading-5 text-[#5d5768]">{value}</p>
+    </div>
+  );
+}
+
+function LegendChip({ className, label }: { className: string; label: string }) {
+  return <span className={`rounded-full px-3 py-1 ${className}`}>{label}</span>;
+}
+
 function SectionTitle({
   action,
   onClick,
@@ -284,46 +883,6 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <p className="text-[9px] font-semibold text-[#9a94a8]">{label}</p>
       <p className="mt-1 text-[13px] font-extrabold text-[#4b4558]">{value}</p>
     </div>
-  );
-}
-
-function Ring({ value }: { value: number }) {
-  const radius = 38;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
-
-  return (
-    <div className="relative mx-auto h-28 w-28">
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-        <circle cx="50" cy="50" r={radius} fill="none" stroke="#f1edf6" strokeWidth="7" />
-        <circle
-          cx="50"
-          cy="50"
-          r={radius}
-          fill="none"
-          stroke="#d6257d"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          strokeWidth="7"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center text-[22px] font-extrabold text-[#c72272]">
-        {value}%
-      </div>
-    </div>
-  );
-}
-
-function Avatar({ index, name }: { index: number; name: string }) {
-  const classes = ["bg-[#f8d9c0]", "bg-[#d8e8ff]", "bg-[#eadcff]", "bg-[#d8f3e8]"];
-
-  return (
-    <span
-      className={`flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-[9px] font-bold ${classes[index % classes.length]}`}
-    >
-      {name.slice(0, 1)}
-    </span>
   );
 }
 
