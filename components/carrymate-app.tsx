@@ -6,17 +6,23 @@ import { useRouter } from "next/navigation";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
+import { MeetingRoomSheet } from "@/components/meeting-room-sheet";
 import { ScheduleTab } from "@/components/schedule-tab";
 import { TaskTab } from "@/components/task-tab";
 import { getDemoWorkspace } from "@/data/carrymate";
 import {
   formatTaskDueLabel,
   isUuid,
+  mapMeetingRowsToConfirmedMeetings,
   mapTeamRowToProject,
   mapTaskRowsToTasks,
   mapTeamMemberRowsToTeamMembers,
 } from "@/lib/mappers/carrymate";
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
+import {
+  createMeeting,
+  getMeetingsByTeam,
+} from "@/lib/supabase/meetings";
 import {
   createTask,
   getTasksByTeam,
@@ -50,6 +56,7 @@ import {
   FileCategory,
   FileItem,
   HealthStatus,
+  MeetingActionItem,
   Project,
   ScheduleSlot,
   TabId,
@@ -59,7 +66,7 @@ import {
 } from "@/types/carrymate";
 
 type ViewMode = "onboarding" | "workspace";
-type WorkspaceSheetMode = "task" | "schedule" | "file" | null;
+type WorkspaceSheetMode = "task" | "schedule" | "meeting" | "file" | null;
 type OnboardingSheetMode =
   | "createTeam"
   | "joinTeam"
@@ -157,6 +164,51 @@ function buildInviteLink(inviteCode: string) {
   return `${origin}/join/${inviteCode}`;
 }
 
+function formatMeetingDateLabel(startsAt: string) {
+  const date = new Date(startsAt);
+  if (Number.isNaN(date.getTime())) {
+    return "회의 일정";
+  }
+
+  const today = new Date();
+  if (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  ) {
+    return "오늘";
+  }
+
+  return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+}
+
+function formatMeetingTimeRange(startsAt: string, endsAt?: string | null) {
+  const start = new Date(startsAt);
+  const end = endsAt ? new Date(endsAt) : null;
+
+  if (Number.isNaN(start.getTime())) {
+    return "시간 미정";
+  }
+
+  const startLabel = start.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  if (!end || Number.isNaN(end.getTime())) {
+    return `${startLabel} - 진행 중`;
+  }
+
+  const endLabel = end.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  return `${startLabel} - ${endLabel}`;
+}
+
 export function CarryMateApp({
   initialInviteCode,
 }: {
@@ -182,6 +234,7 @@ export function CarryMateApp({
   const [files, setFiles] = useState<FileItem[]>(() => getDemoWorkspace().files);
   const [taskSyncMessage, setTaskSyncMessage] = useState("");
   const [memberSyncMessage, setMemberSyncMessage] = useState("");
+  const [meetingSyncMessage, setMeetingSyncMessage] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [memberLinkMessage, setMemberLinkMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
@@ -214,6 +267,7 @@ export function CarryMateApp({
   const [pendingMemberExitId, setPendingMemberExitId] = useState<string | null>(
     null,
   );
+  const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
 
   const activeMembers = useMemo(
     () => members.filter((member) => member.status === "active"),
@@ -358,6 +412,37 @@ export function CarryMateApp({
   }, [hasPersistentProjectId, project.id]);
 
   useEffect(() => {
+    if (!hasPersistentProjectId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMeetings = async () => {
+      const result = await getMeetingsByTeam(project.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.ok || !result.data) {
+        console.error(result.message);
+        setMeetingSyncMessage(result.message);
+        return;
+      }
+
+      setConfirmedMeetings(mapMeetingRowsToConfirmedMeetings(result.data));
+      setMeetingSyncMessage("");
+    };
+
+    void loadMeetings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPersistentProjectId, project.id]);
+
+  useEffect(() => {
     if (!hasPersistentProjectId || !authenticatedUser?.id) {
       setCurrentMember(null);
       return;
@@ -414,6 +499,7 @@ export function CarryMateApp({
       setTeamSaveMessage("");
       setTaskSyncMessage("실제 팀 업무를 불러오는 중입니다.");
       setMemberSyncMessage("실제 팀원 정보를 불러오는 중입니다.");
+      setMeetingSyncMessage("실제 팀 회의를 불러오는 중입니다.");
 
       const teamResult = await getTeamByInviteCode(workspaceInviteCode);
 
@@ -429,6 +515,7 @@ export function CarryMateApp({
         );
         setTaskSyncMessage("");
         setMemberSyncMessage("");
+        setMeetingSyncMessage("");
         setViewMode("onboarding");
         return;
       }
@@ -463,8 +550,10 @@ export function CarryMateApp({
       setCopyFeedback("");
       setTaskSyncMessage(tasksResult.ok ? "" : tasksResult.message);
       setMemberSyncMessage(teamMembersResult.ok ? "" : teamMembersResult.message);
+      setMeetingSyncMessage("");
       setMemberLinkMessage("");
       setPendingMemberExitId(null);
+      setActiveMeetingId(null);
     };
 
     void loadWorkspaceFromInviteCode();
@@ -589,12 +678,14 @@ export function CarryMateApp({
     setTeamSaveMessage("");
     setTaskSyncMessage("");
     setMemberSyncMessage("");
+    setMeetingSyncMessage("");
     setMemberLinkMessage("");
     setIsInviteModalOpen(false);
     setIsMemberLinkSheetOpen(false);
     setUnlinkedMemberRows([]);
     setCurrentMember(null);
     setPendingMemberExitId(null);
+    setActiveMeetingId(null);
   };
 
   const openAuthSheet = (mode: AuthMode) => {
@@ -1128,6 +1219,76 @@ export function CarryMateApp({
     closeSheet();
   };
 
+  const handleCreateMeeting = async (input: {
+    title: string;
+    startsAt: string;
+    endsAt: string;
+  }) => {
+    const trimmedTitle = input.title.trim();
+    const startsAtInput = input.startsAt.trim();
+    const endsAtInput = input.endsAt.trim();
+
+    if (!trimmedTitle || !startsAtInput) {
+      setMeetingSyncMessage("회의 제목과 시작 시각을 입력해 주세요.");
+      return false;
+    }
+
+    const startsAtDate = new Date(startsAtInput);
+    const endsAtDate = endsAtInput ? new Date(endsAtInput) : null;
+
+    if (
+      Number.isNaN(startsAtDate.getTime()) ||
+      (endsAtDate && Number.isNaN(endsAtDate.getTime()))
+    ) {
+      setMeetingSyncMessage("회의 시각 형식이 올바르지 않습니다.");
+      return false;
+    }
+
+    const startsAt = startsAtDate.toISOString();
+    const endsAt = endsAtDate ? endsAtDate.toISOString() : "";
+
+    const nextMeeting: ConfirmedMeeting = {
+      id: `meeting-${Date.now()}`,
+      title: trimmedTitle,
+      dateLabel: formatMeetingDateLabel(startsAt),
+      timeRange: formatMeetingTimeRange(startsAt, endsAt || null),
+      attendeeCount: activeMembers.length,
+      createdByMemberId: currentMember?.id ?? null,
+      startsAt,
+      endsAt: endsAt || null,
+      teamId: hasPersistentProjectId ? project.id : undefined,
+      isEnded: false,
+    };
+
+    if (!hasPersistentProjectId) {
+      setConfirmedMeetings((current) => [nextMeeting, ...current]);
+      setMeetingSyncMessage("데모 회의를 로컬 상태에 추가했습니다.");
+      setActiveTab("schedule");
+      closeSheet();
+      return true;
+    }
+
+    const result = await createMeeting({
+      teamId: project.id,
+      title: trimmedTitle,
+      startsAt,
+      endsAt: endsAt || null,
+      createdBy: currentMember?.id ?? null,
+    });
+
+    if (!result.ok || !result.data) {
+      setMeetingSyncMessage(result.message);
+      return false;
+    }
+
+    const persistedMeeting = mapMeetingRowsToConfirmedMeetings([result.data])[0];
+    setConfirmedMeetings((current) => [persistedMeeting, ...current]);
+    setMeetingSyncMessage("");
+    setActiveTab("schedule");
+    closeSheet();
+    return true;
+  };
+
   const handleConfirmSlot = (slotId: string) => {
     // 추천 슬롯을 확정 일정으로 이동시키는 상태 전환 로직이다.
     const selectedSlot = scheduleSlots.find((slot) => slot.id === slotId);
@@ -1144,9 +1305,35 @@ export function CarryMateApp({
       createdByMemberId: activeMembers[0]?.id ?? null,
     };
 
-    setConfirmedMeetings((current) => [nextMeeting, ...current]);
-    setScheduleSlots((current) => current.filter((slot) => slot.id !== slotId));
-    setActiveTab("schedule");
+    const startsAt = new Date().toISOString();
+
+    if (!hasPersistentProjectId) {
+      setConfirmedMeetings((current) => [nextMeeting, ...current]);
+      setScheduleSlots((current) => current.filter((slot) => slot.id !== slotId));
+      setActiveTab("schedule");
+      return;
+    }
+
+    void (async () => {
+      const result = await createMeeting({
+        teamId: project.id,
+        title: selectedSlot.label,
+        startsAt,
+        endsAt: null,
+        createdBy: currentMember?.id ?? null,
+      });
+
+      if (!result.ok || !result.data) {
+        setMeetingSyncMessage(result.message);
+        return;
+      }
+
+      const persistedMeeting = mapMeetingRowsToConfirmedMeetings([result.data])[0];
+      setConfirmedMeetings((current) => [persistedMeeting, ...current]);
+      setScheduleSlots((current) => current.filter((slot) => slot.id !== slotId));
+      setMeetingSyncMessage("");
+      setActiveTab("schedule");
+    })();
   };
 
   const handleUploadFile = (category: FileCategory) => {
@@ -1195,6 +1382,90 @@ export function CarryMateApp({
         return file;
       }),
     );
+  };
+
+  const handleMeetingUpdated = (updatedMeeting: ConfirmedMeeting) => {
+    setConfirmedMeetings((current) =>
+      current.map((meeting) =>
+        meeting.id === updatedMeeting.id ? updatedMeeting : meeting,
+      ),
+    );
+  };
+
+  const handleImportMeetingActionItems = async (
+    meeting: ConfirmedMeeting,
+    items: MeetingActionItem[],
+  ) => {
+    if (items.length === 0) {
+      return {
+        ok: false,
+        message: "선택한 할 일 후보가 없습니다.",
+      };
+    }
+
+    if (!hasPersistentProjectId) {
+      const demoTasks = items.map((item, index) => {
+        const assignee = members.find((member) => member.name === item.assigneeName);
+        const dueAt = new Date();
+        dueAt.setDate(dueAt.getDate() + item.dueDateOffsetDays);
+
+        return {
+          id: `task-${Date.now()}-${index}`,
+          title: item.title,
+          assigneeId: assignee?.id ?? null,
+          status: "todo" as const,
+          priority: "medium" as const,
+          dueLabel: formatTaskDueLabel(dueAt.toISOString(), null),
+          dueAt: dueAt.toISOString(),
+          aiSuggestedRole: "회의 AI 추천 업무",
+        };
+      });
+
+      setTasks((current) => [...demoTasks, ...current]);
+      setActiveTab("tasks");
+
+      return {
+        ok: true,
+        message: `${demoTasks.length}개의 데모 업무를 Tasks에 추가했습니다.`,
+      };
+    }
+
+    const createdTasks: Task[] = [];
+
+    for (const item of items) {
+      const assignee = members.find((member) => member.name === item.assigneeName);
+      const dueAt = new Date();
+      dueAt.setHours(18, 0, 0, 0);
+      dueAt.setDate(dueAt.getDate() + item.dueDateOffsetDays);
+
+      const result = await createTask({
+        teamId: project.id,
+        title: item.title,
+        assigneeId: assignee?.id ?? null,
+        status: "todo",
+        priority: "medium",
+        dueAt: dueAt.toISOString(),
+        aiSuggestedRole: `회의 "${meeting.title}" AI 추천 업무`,
+      });
+
+      if (!result.ok || !result.data) {
+        return {
+          ok: false,
+          message: result.message,
+        };
+      }
+
+      createdTasks.push(mapTaskRowsToTasks([result.data])[0]);
+    }
+
+    setTasks((current) => [...createdTasks, ...current]);
+    setTaskSyncMessage("");
+    setActiveTab("tasks");
+
+    return {
+      ok: true,
+      message: `${createdTasks.length}개의 업무를 실제 Tasks 보드에 등록했습니다.`,
+    };
   };
 
   const handleConfirmMemberExit = () => {
@@ -1265,6 +1536,8 @@ export function CarryMateApp({
   const pendingExitMember = members.find(
     (member) => member.id === pendingMemberExitId,
   );
+  const activeMeeting =
+    confirmedMeetings.find((meeting) => meeting.id === activeMeetingId) ?? null;
 
   const renderWorkspaceSheet = () => {
     // 현재 탭에 따라 빠른 추가 바텀시트 내용을 바꿔 재사용한다.
@@ -1294,6 +1567,15 @@ export function CarryMateApp({
           placeholder="예: 발표 리허설 점검"
           onClose={closeSheet}
           onSubmit={handleAddSchedule}
+        />
+      );
+    }
+
+    if (sheetMode === "meeting") {
+      return (
+        <MeetingCreateSheet
+          onClose={closeSheet}
+          onSubmit={handleCreateMeeting}
         />
       );
     }
@@ -1538,6 +1820,11 @@ export function CarryMateApp({
               {memberSyncMessage}
             </p>
           ) : null}
+          {meetingSyncMessage ? (
+            <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[12px] font-medium text-warning">
+              {meetingSyncMessage}
+            </p>
+          ) : null}
           {memberLinkMessage && !isMemberLinkSheetOpen ? (
             <p className="mt-3 rounded-2xl bg-canvas px-4 py-3 text-[12px] font-medium text-muted">
               {memberLinkMessage}
@@ -1573,7 +1860,9 @@ export function CarryMateApp({
               slots={scheduleSlots}
               meetings={confirmedMeetings}
               onAddSchedule={() => openSheet("schedule")}
+              onCreateMeeting={() => openSheet("meeting")}
               onConfirmSlot={handleConfirmSlot}
+              onOpenMeeting={setActiveMeetingId}
             />
           )}
           {activeTab === "files" && (
@@ -1600,6 +1889,18 @@ export function CarryMateApp({
           onCopy={() => {
             void handleCopyInviteInfo();
           }}
+        />
+      ) : null}
+      {activeMeeting ? (
+        <MeetingRoomSheet
+          currentMember={currentMember}
+          isDemo={!hasPersistentProjectId}
+          meeting={activeMeeting}
+          members={members}
+          onClose={() => setActiveMeetingId(null)}
+          onImportActionItems={handleImportMeetingActionItems}
+          onMeetingUpdated={handleMeetingUpdated}
+          projectId={project.id}
         />
       ) : null}
       {renderMemberLinkSheet()}
@@ -2327,6 +2628,85 @@ function QuickActionSheet({
   );
 }
 
+function MeetingCreateSheet({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (input: {
+    title: string;
+    startsAt: string;
+    endsAt: string;
+  }) => Promise<boolean>;
+}) {
+  const [title, setTitle] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+
+  return (
+    <SheetShell title="회의 만들기" onClose={onClose}>
+      <p className="text-sm leading-6 text-muted">
+        실제 UUID 팀에서는 회의가 DB에 저장되고, 종료 후 채팅 요약과 할 일 전송까지 연결됩니다.
+      </p>
+      <div className="space-y-3">
+        <SheetInput
+          label="회의 제목"
+          value={title}
+          onChange={setTitle}
+          placeholder="예: 발표 리허설 회의"
+        />
+        <SheetInput
+          label="시작 시각"
+          type="datetime-local"
+          value={startsAt}
+          onChange={setStartsAt}
+          placeholder=""
+        />
+        <SheetInput
+          label="종료 시각 (선택)"
+          type="datetime-local"
+          value={endsAt}
+          onChange={setEndsAt}
+          placeholder=""
+        />
+      </div>
+      {message ? (
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+          {message}
+        </p>
+      ) : null}
+      <PrimaryButton
+        label={isSubmitting ? "회의 생성 중..." : "회의 생성"}
+        onClick={async () => {
+          if (isSubmitting) {
+            return;
+          }
+
+          if (!title.trim() || !startsAt.trim()) {
+            setMessage("회의 제목과 시작 시각을 입력해 주세요.");
+            return;
+          }
+
+          if (endsAt && endsAt < startsAt) {
+            setMessage("종료 시각은 시작 시각보다 빠를 수 없습니다.");
+            return;
+          }
+
+          setMessage("");
+          setIsSubmitting(true);
+          const ok = await onSubmit({ title, startsAt, endsAt });
+          if (!ok) {
+            setMessage("회의 생성에 실패했습니다. Supabase 정책과 환경변수를 확인해 주세요.");
+          }
+          setIsSubmitting(false);
+        }}
+      />
+    </SheetShell>
+  );
+}
+
 function UploadSheet({
   onClose,
   onUpload,
@@ -2413,7 +2793,7 @@ function SheetInput({
   placeholder,
 }: {
   label: string;
-  type?: "text" | "date" | "email" | "password";
+  type?: "text" | "date" | "datetime-local" | "email" | "password";
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;

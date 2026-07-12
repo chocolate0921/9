@@ -3,7 +3,18 @@ import { TeamMemberRow } from "@/lib/supabase/team-members";
 import { TaskRow } from "@/lib/supabase/tasks";
 import { TeamRow } from "@/lib/supabase/teams";
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
-import { Project } from "@/types/carrymate";
+import {
+  ConfirmedMeeting,
+  MeetingActionItem,
+  MeetingMessage,
+  MeetingNote,
+  Project,
+} from "@/types/carrymate";
+import {
+  MeetingMessageRow,
+  MeetingNoteRow,
+  MeetingRow,
+} from "@/lib/supabase/meetings";
 
 export function isUuid(value: string | null | undefined) {
   if (!value) {
@@ -73,6 +84,130 @@ export function mapTaskRowToTask(row: TaskRow): Task {
 
 export function mapTaskRowsToTasks(rows: TaskRow[]) {
   return rows.map(mapTaskRowToTask);
+}
+
+function formatMeetingDateLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "회의 일정";
+  }
+
+  const today = new Date();
+  if (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  ) {
+    return "오늘";
+  }
+
+  return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+}
+
+function formatMeetingTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function mapMeetingRowToConfirmedMeeting(row: MeetingRow): ConfirmedMeeting {
+  const isEnded =
+    Boolean(row.ends_at) &&
+    new Date(row.ends_at as string).getTime() <= Date.now();
+
+  return {
+    id: row.id,
+    title: row.title,
+    dateLabel: formatMeetingDateLabel(row.starts_at),
+    timeRange: `${formatMeetingTime(row.starts_at)} - ${row.ends_at ? formatMeetingTime(row.ends_at) : "진행 중"}`,
+    attendeeCount: 0,
+    createdByMemberId: row.created_by,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    teamId: row.team_id,
+    isEnded,
+  };
+}
+
+export function mapMeetingRowsToConfirmedMeetings(rows: MeetingRow[]) {
+  return rows.map(mapMeetingRowToConfirmedMeeting);
+}
+
+export function mapMeetingMessageRowToMeetingMessage(
+  row: MeetingMessageRow,
+): MeetingMessage {
+  return {
+    id: row.id,
+    meetingId: row.meeting_id,
+    memberId: row.member_id,
+    senderName: row.sender_name,
+    message: row.message,
+    createdAt: row.created_at,
+  };
+}
+
+export function mapMeetingMessageRowsToMeetingMessages(rows: MeetingMessageRow[]) {
+  return rows.map(mapMeetingMessageRowToMeetingMessage);
+}
+
+function normalizeDecisionList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function normalizeActionItemList(value: unknown): MeetingActionItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const title = typeof record.title === "string" ? record.title : "";
+      if (!title) {
+        return null;
+      }
+
+      return {
+        title,
+        assigneeName:
+          typeof record.assigneeName === "string" ? record.assigneeName : "",
+        dueDateOffsetDays:
+          typeof record.dueDateOffsetDays === "number" &&
+          Number.isFinite(record.dueDateOffsetDays)
+            ? Math.round(record.dueDateOffsetDays)
+            : 3,
+      };
+    })
+    .filter((item): item is MeetingActionItem => Boolean(item));
+}
+
+export function mapMeetingNoteRowToMeetingNote(row: MeetingNoteRow): MeetingNote {
+  return {
+    id: row.id,
+    teamId: row.team_id,
+    meetingId: row.meeting_id,
+    title: row.title,
+    content: row.content,
+    aiSummary: row.ai_summary,
+    aiDecisions: normalizeDecisionList(row.ai_decisions),
+    aiActionItems: normalizeActionItemList(row.ai_action_items),
+    createdAt: row.created_at,
+  };
 }
 
 export function mapTeamRowToProject(row: TeamRow): Project {

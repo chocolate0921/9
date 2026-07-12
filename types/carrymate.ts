@@ -55,6 +55,41 @@ export type ConfirmedMeeting = {
   timeRange: string;
   attendeeCount: number;
   createdByMemberId?: string | null;
+  startsAt?: string;
+  endsAt?: string | null;
+  teamId?: string;
+  isEnded?: boolean;
+  aiSummary?: string;
+  aiDecisions?: string[];
+  aiActionItems?: MeetingActionItem[];
+  noteId?: string;
+};
+
+export type MeetingActionItem = {
+  title: string;
+  assigneeName: string;
+  dueDateOffsetDays: number;
+};
+
+export type MeetingMessage = {
+  id: string;
+  meetingId: string;
+  memberId: string | null;
+  senderName: string;
+  message: string;
+  createdAt: string;
+};
+
+export type MeetingNote = {
+  id: string;
+  teamId: string;
+  meetingId: string | null;
+  title: string;
+  content: string;
+  aiSummary: string | null;
+  aiDecisions: string[];
+  aiActionItems: MeetingActionItem[];
+  createdAt: string;
 };
 
 export type FileItem = {
