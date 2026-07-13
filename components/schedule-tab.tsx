@@ -509,13 +509,14 @@ export function ScheduleTab({
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1.55fr,0.9fr]">
-          <div className="rounded-[22px] border border-[#eeeaf7] bg-[#faf9ff] p-3">
-            <div className="grid grid-cols-[44px_repeat(5,minmax(0,1fr))] gap-1">
-              <div />
+          <div className="overflow-x-auto rounded-[22px] border border-[#e4def0] bg-[#e4def0] p-px">
+            <div className="min-w-[520px]">
+              <div className="grid grid-cols-[44px_repeat(5,minmax(0,1fr))] gap-px">
+                <div className="min-h-[44px] bg-[#f7f6fd]" />
               {DAY_LABELS.map((day) => (
                 <div
                   key={day}
-                  className="rounded-lg bg-white px-1 py-2 text-center text-[10px] font-extrabold text-[#6259e8]"
+                  className="flex min-h-[44px] items-center justify-center bg-[#f7f6fd] px-1 text-center text-[10px] font-extrabold text-[#6259e8] sm:text-[11px]"
                 >
                   {day}
                 </div>
@@ -534,6 +535,7 @@ export function ScheduleTab({
                   onClick={handlePeriodClick}
                 />
               ))}
+              </div>
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-3">
@@ -927,9 +929,9 @@ function PeriodRow({
 }) {
   return (
     <>
-      <div className="rounded-lg bg-white px-1 py-2 text-center">
-        <p className="text-[10px] font-extrabold text-[#2d293b]">{period.label}</p>
-        <p className="mt-0.5 text-[8px] leading-3 text-[#938ca1]">
+      <div className="flex min-h-[52px] flex-col items-center justify-center bg-[#f7f6fd] px-1 text-center">
+        <p className="text-[10px] font-extrabold text-[#2d293b] sm:text-[11px]">{period.label}</p>
+        <p className="mt-0.5 text-[8px] leading-3 text-[#938ca1] sm:text-[9px]">
           {period.start}
           <br />
           {period.end}
@@ -959,7 +961,9 @@ function PeriodRow({
             type="button"
             disabled={disabled}
             onClick={() => onClick(dayIndex, periodIndex)}
-            className={`relative flex h-11 items-center justify-center rounded-lg border text-[10px] font-extrabold transition ${className} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} disabled:opacity-60`}
+            aria-pressed={isSelected}
+            aria-label={`${DAY_LABELS[dayIndex]} ${period.label} 공강 선택`}
+            className={`relative flex min-h-[52px] items-center justify-center bg-white text-[10px] font-extrabold transition sm:text-[11px] ${className} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
           >
             {isSelected ? "" : isRecommended ? "★" : count > 0 ? count : ""}
             {isSelected && isRecommended ? (

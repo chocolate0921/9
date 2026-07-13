@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   hasSupabaseServiceRoleConfig,
@@ -8,15 +8,56 @@ import {
 } from "@/lib/supabase/config";
 import { TEAM_FILES_BUCKET } from "@/lib/supabase/files";
 
+type StageError = {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
+
+function logTeamDeleteFailure(stage: string, teamId: string, error: unknown) {
+  const stageError = error as StageError | undefined;
+  console.error("team-delete-failure", {
+    stage,
+    teamId,
+    message: stageError?.message ?? "",
+    code: stageError?.code ?? "",
+    details: stageError?.details ?? "",
+    hint: stageError?.hint ?? "",
+  });
+}
+
+function fail(stage: string, teamId: string, message: string, error?: unknown) {
+  if (error) {
+    logTeamDeleteFailure(stage, teamId, error);
+  }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      stage,
+      message,
+    },
+    { status: 500 },
+  );
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ teamId: string }> },
 ) {
   if (!hasSupabaseServiceRoleConfig()) {
+    logTeamDeleteFailure("config", "", {
+      message: "SUPABASE_SERVICE_ROLE_KEY is missing",
+      code: "",
+      details: "",
+      hint: "",
+    });
     return NextResponse.json(
       {
-        error:
-          "SUPABASE_SERVICE_ROLE_KEY가 없습니다. 팀 삭제를 위해 서버 환경변수를 설정해 주세요.",
+        ok: false,
+        stage: "config",
+        message: "? ??젣瑜?泥섎━?????놁뒿?덈떎. ?쒕쾭 ?ㅼ젙???뺤씤??二쇱꽭??",
       },
       { status: 500 },
     );
@@ -29,7 +70,20 @@ export async function DELETE(
     : "";
 
   if (!accessToken) {
-    return NextResponse.json({ error: "인증 토큰이 없습니다." }, { status: 401 });
+    logTeamDeleteFailure("token", teamId, {
+      message: "Missing authorization bearer token",
+      code: "",
+      details: "",
+      hint: "",
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        stage: "token",
+        message: "濡쒓렇?몄씠 ?꾩슂?⑸땲??",
+      },
+      { status: 401 },
+    );
   }
 
   const authClient = createClient(supabaseUrl, supabasePublishableKey, {
@@ -47,10 +101,7 @@ export async function DELETE(
 
   const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
   if (userError || !userData.user) {
-    return NextResponse.json(
-      { error: userError?.message ?? "사용자를 확인할 수 없습니다." },
-      { status: 401 },
-    );
+    return fail("user", teamId, "濡쒓렇???뺣낫瑜??뺤씤?????놁뒿?덈떎.", userError);
   }
 
   const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
@@ -69,12 +120,22 @@ export async function DELETE(
     .maybeSingle();
 
   if (leaderError) {
-    return NextResponse.json({ error: leaderError.message }, { status: 500 });
+    return fail("team_members", teamId, "???沅뚰븳???뺤씤?????놁뒿?덈떎.", leaderError);
   }
 
   if (!leaderRow?.is_leader) {
+    logTeamDeleteFailure("team_members", teamId, {
+      message: "Current user is not a team leader",
+      code: "",
+      details: "",
+      hint: "",
+    });
     return NextResponse.json(
-      { error: "팀장만 팀을 삭제할 수 있습니다." },
+      {
+        ok: false,
+        stage: "team_members",
+        message: "??λ쭔 ?????젣?????덉뒿?덈떎.",
+      },
       { status: 403 },
     );
   }
@@ -85,23 +146,23 @@ export async function DELETE(
     .eq("team_id", teamId);
 
   if (sharedFilesError) {
-    return NextResponse.json(
-      { error: sharedFilesError.message },
-      { status: 500 },
-    );
+    return fail("shared_files", teamId, "?먮즺 紐⑸줉???뺤씤?????놁뒿?덈떎.", sharedFilesError);
   }
 
   const sharedFileIds = (sharedFiles ?? []).map((row) => row.id);
-  const { data: versions, error: versionsError } = await adminClient
-    .from("file_versions")
-    .select("storage_path")
-    .in("shared_file_id", sharedFileIds.length > 0 ? sharedFileIds : [""]);
+  const versionsResult =
+    sharedFileIds.length > 0
+      ? await adminClient
+          .from("file_versions")
+          .select("storage_path,file_id")
+          .in("file_id", sharedFileIds)
+      : null;
 
-  if (versionsError) {
-    return NextResponse.json({ error: versionsError.message }, { status: 500 });
+  if (versionsResult?.error) {
+    return fail("file_versions", teamId, "?먮즺 ???寃쎈줈瑜??뺤씤?????놁뒿?덈떎.", versionsResult.error);
   }
 
-  const storagePaths = (versions ?? [])
+  const storagePaths = (versionsResult?.data ?? [])
     .map((row) => row.storage_path)
     .filter((value): value is string => Boolean(value))
     .filter((value) => /^https?:\/\//i.test(value) === false);
@@ -112,20 +173,28 @@ export async function DELETE(
       .remove(storagePaths);
 
     if (storageError) {
-      return NextResponse.json(
-        { error: `Storage 삭제에 실패했습니다: ${storageError.message}` },
-        { status: 500 },
-      );
+      const storageErrorMeta = storageError as StageError;
+      const storageErrorCode = storageErrorMeta.code ?? "";
+      const storageErrorMessage = storageErrorMeta.message ?? "";
+      const ignoreMissingObject =
+        storageErrorCode === "404" ||
+        /not\s*found/i.test(storageErrorMessage) ||
+        /does not exist/i.test(storageErrorMessage);
+
+      if (!ignoreMissingObject) {
+        return fail("storage", teamId, "?쇰? ??μ냼 ?뚯씪????젣?섏? 紐삵뻽?듬땲??", storageError);
+      }
     }
   }
 
   const { error: deleteError } = await adminClient.from("teams").delete().eq("id", teamId);
   if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    return fail("teams", teamId, "? ??젣???ㅽ뙣?덉뒿?덈떎.", deleteError);
   }
 
   return NextResponse.json({
     ok: true,
-    message: "팀이 삭제되었습니다.",
+    message: "?????젣?섏뿀?듬땲??",
   });
 }
+

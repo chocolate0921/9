@@ -130,27 +130,32 @@ export function FileTab({
   const [editUrl, setEditUrl] = useState("");
   const [editNote, setEditNote] = useState("");
   const [busyFileId, setBusyFileId] = useState<string | null>(null);
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<FileCategory | "all">("all");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastCreateDialogRequestIdRef = useRef(0);
 
   const visibleFiles = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return files;
-    }
+    return files.filter((file) => {
+      if (activeCategoryFilter !== "all" && getUiCategory(file) !== activeCategoryFilter) {
+        return false;
+      }
 
-    return files.filter((file) =>
-      [
+      if (!keyword) {
+        return true;
+      }
+
+      return [
         file.name,
         file.uploadedBy,
         getUiCategory(file),
-        isLinkItem(file) ? "留곹겕" : "?뚯씪",
+        isLinkItem(file) ? "링크" : "파일",
       ]
         .join(" ")
         .toLowerCase()
-        .includes(keyword),
-    );
-  }, [files, query]);
+        .includes(keyword);
+    });
+  }, [activeCategoryFilter, files, query]);
 
   const counts = useMemo(
     () => ({
@@ -169,7 +174,7 @@ export function FileTab({
 
   const openCreateDialog = useCallback(() => {
     if (!canUpload) {
-      setMessage("?ㅼ젣 UUID ??먯꽌留??먮즺瑜?異붽??????덉뒿?덈떎.");
+      setMessage("실제 UUID 팀에서만 자료 업로드를 사용할 수 있습니다.");
       return;
     }
 
@@ -229,7 +234,7 @@ export function FileTab({
 
   const handleCreateLink = async () => {
     if (!onCreateLink) {
-      setMessage("留곹겕 ?깅줉 湲곕뒫???ъ슜?????놁뒿?덈떎.");
+      setMessage("링크 등록 기능을 사용할 수 없습니다.");
       return;
     }
 
@@ -280,7 +285,7 @@ export function FileTab({
   const handleDownload = async (file: FileItem) => {
     if (isLinkItem(file)) {
       if (!onOpenLink) {
-        setMessage("留곹겕 ?닿린 湲곕뒫???ъ슜?????놁뒿?덈떎.");
+        setMessage("링크 열기 기능을 사용할 수 없습니다.");
         return;
       }
 
@@ -292,7 +297,7 @@ export function FileTab({
     }
 
     if (!onDownloadFile) {
-      setMessage("?ㅼ슫濡쒕뱶 湲곕뒫???ъ슜?????놁뒿?덈떎.");
+      setMessage("다운로드 기능을 사용할 수 없습니다.");
       return;
     }
 
@@ -307,11 +312,18 @@ export function FileTab({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {(["minutes", "presentation", "reference"] as const).map((key) => {
           const meta = CATEGORY_META[key];
+          const isSelected = activeCategoryFilter === key;
           return (
             <button
               type="button"
               key={key}
-              className="group flex h-full min-h-[108px] w-full flex-col items-start gap-2 rounded-[22px] border border-[#edf0f6] bg-white px-4 py-4 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] active:scale-[0.99]"
+              onClick={() =>
+                setActiveCategoryFilter((current) => (current === key ? "all" : key))
+              }
+              aria-pressed={isSelected}
+              className={`group flex h-full min-h-[108px] w-full items-center gap-3 rounded-[22px] border px-4 py-4 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] active:scale-[0.99] ${
+                isSelected ? "border-[#cfdaf2] bg-[#f8fbff]" : "border-[#edf0f6] bg-white"
+              }`}
               aria-label={`${meta.title} 자료 ${counts[key]}개`}
             >
               <span
@@ -319,7 +331,7 @@ export function FileTab({
               >
                 {meta.icon}
               </span>
-              <div className="min-w-0 text-left">
+              <div className="min-w-0 flex-1 text-left">
                 <p className="truncate text-[13px] font-extrabold text-[#403a4d] sm:text-sm lg:text-base">
                   {meta.title}
                 </p>
@@ -416,7 +428,7 @@ export function FileTab({
             );
           })
         ) : (
-          <Empty />
+          <Empty onCreate={openCreateDialog} />
         )}
       </div>
 
@@ -537,17 +549,22 @@ export function FileTab({
   );
 }
 
-function Empty() {
+function Empty({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="rounded-[24px] border border-dashed border-[#ddd8e9] bg-white px-5 py-10 text-center shadow-card sm:px-6 sm:py-12">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f3f7ff] text-[20px] font-bold text-[#1e70e6]">
+      <button
+        type="button"
+        onClick={onCreate}
+        aria-label="자료 추가"
+        className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f3f7ff] text-[20px] font-bold text-[#1e70e6] transition hover:scale-[1.03] active:scale-[0.98]"
+      >
         +
-      </div>
+      </button>
       <p className="mt-4 text-[14px] font-extrabold text-[#282438] sm:text-[15px] lg:text-base">
         아직 등록된 자료가 없습니다.
       </p>
-      <p className="mx-auto mt-2 max-w-[18rem] break-keep text-[12px] leading-6 text-[#8f889b] sm:text-sm lg:text-base">
-        자료 추가 버튼을 눌러 회의록·발표자료·참고자료를 등록해보세요.
+      <p className="mx-auto mt-2 max-w-[18rem] whitespace-pre-line break-keep text-[12px] leading-6 text-[#8f889b] sm:text-sm lg:text-base">
+        자료 추가 버튼을 눌러{`\n`}회의록, 발표자료, 참고자료를 등록해 보세요.
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { ConfirmedMeeting, Task } from "@/types/carrymate";
 
 type Summary = {
@@ -267,26 +267,18 @@ export function HomeTab({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <QuickMenu
-            icon="♧"
-            title="프로젝트 현황"
-            description={`${summary.inProgressCount}개 진행 중`}
+            icon="📊"
+            title="프로젝트 진행 현황"
+            description={`${summary.progress}% · 완료 ${summary.doneCount}/${summary.totalCount} · 진행 중 ${summary.inProgressCount} · 연체 ${summary.overdueCount}`}
             onClick={onJumpToTasks}
           />
 
           <QuickMenu
-            icon="↗"
-            title="업무 현황"
-            description={`${summary.doneCount}개 완료`}
-            onClick={onJumpToTasks}
-          />
-
-          <QuickMenu
-            icon="◷"
+            icon="📅"
             title="팀 일정"
             description={`${todayMeetings.length + upcomingMeetings.length}개 일정`}
             onClick={onJumpToSchedule}
           />
-
         </div>
       </section>
     </div>
@@ -451,3 +443,4 @@ function EmptyState({ text }: { text: string }) {
     </div>
   );
 }
+

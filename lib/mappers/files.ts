@@ -1,4 +1,4 @@
-import { FileItem, TeamMember } from "@/types/carrymate";
+﻿import { FileItem, TeamMember } from "@/types/carrymate";
 import {
   TeamFileRecord,
   inferFileCategory,
@@ -32,7 +32,7 @@ export function mapTeamFileRecordsToFileItems(
 
   return records.map(({ sharedFile, latestVersion }) => {
     const uploadedByMemberId = sharedFile.uploaded_by ?? null;
-    const uploadedBy = memberNameById.get(uploadedByMemberId ?? "") ?? "팀원";
+    const uploadedBy = memberNameById.get(uploadedByMemberId ?? "") ?? "알 수 없음";
     const fileName = latestVersion?.file_name ?? sharedFile.name;
     const mimeType = latestVersion?.mime_type ?? null;
     const category = normalizeStoredFileCategory(
@@ -67,3 +67,4 @@ export function mapTeamFileRecordsToFileItems(
     };
   });
 }
+

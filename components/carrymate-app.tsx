@@ -1,16 +1,19 @@
-"use client";
+﻿"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { ModalShell } from "@/components/modal-shell";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
 import { MeetingRoomSheet } from "@/components/meeting-room-sheet";
+import { TeamAssistantPanel } from "@/components/team-assistant-panel";
 import { ScheduleTab } from "@/components/schedule-tab";
 import { TaskTab } from "@/components/task-tab";
 import { getDemoWorkspace } from "@/data/carrymate";
+import { buildTeamAssistantContext } from "@/lib/carrymate/assistant-context";
 import {
   formatTaskDueLabel,
   getMeetingStatus,
@@ -335,6 +338,7 @@ export function CarryMateApp({
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [currentMember, setCurrentMember] = useState<TeamMember | null>(null);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [unlinkedMemberRows, setUnlinkedMemberRows] = useState<TeamMemberRow[]>([]);
   const [isTaskCreating, setIsTaskCreating] = useState(false);
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
@@ -372,6 +376,19 @@ export function CarryMateApp({
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilityMessage, setAvailabilityMessage] = useState("");
+
+  const assistantContext = useMemo(
+    () =>
+      buildTeamAssistantContext({
+        project,
+        members,
+        tasks,
+        meetings: confirmedMeetings,
+        teamAvailability,
+        files,
+      }),
+    [confirmedMeetings, files, members, project, tasks, teamAvailability],
+  );
   const [isRestoringWorkspace, setIsRestoringWorkspace] = useState(
     () => !normalizeInviteCode(initialInviteCode),
   );
@@ -2955,6 +2972,20 @@ export function CarryMateApp({
         <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
       </main>
 
+      {typeof document !== "undefined" && viewMode === "workspace" && !isAssistantOpen
+        ? createPortal(
+            <button
+              type="button"
+              aria-label="CarryMate AI 열기"
+              onClick={() => setIsAssistantOpen(true)}
+              className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-[0_14px_34px_rgba(30,112,230,0.28)] transition hover:scale-[1.03] active:scale-[0.98] sm:right-6 sm:bottom-6"
+            >
+              <AiSparkIcon />
+            </button>,
+            document.body,
+          )
+        : null}
+
       <WorkspaceDrawer
         isOpen={isMenuOpen && viewMode === "workspace"}
         currentTeam={currentTeamSummary}
@@ -2984,21 +3015,38 @@ export function CarryMateApp({
       {pendingTeamAction ? (
         <WorkspaceTeamActionModal
           action={pendingTeamAction.kind}
-          teamName={pendingTeamAction.summary.team.team_name}
           onClose={() => setPendingTeamAction(null)}
-          onConfirm={async () => {
-            const result =
-              pendingTeamAction.kind === "leave"
-                ? await handleLeaveTeam(pendingTeamAction.summary)
-                : await handleDeleteTeam(pendingTeamAction.summary);
-            if (result.ok) {
-              setPendingTeamAction(null);
-            }
-          }}
+          onConfirm={async () =>
+            pendingTeamAction.kind === "leave"
+              ? await handleLeaveTeam(pendingTeamAction.summary)
+              : await handleDeleteTeam(pendingTeamAction.summary)
+          }
         />
       ) : null}
 
       {renderWorkspaceSheet()}
+      {isAssistantOpen ? (
+        <TeamAssistantPanel
+          open={isAssistantOpen}
+          teamId={hasPersistentProjectId ? project.id : null}
+          teamName={project.name}
+          accessToken={session?.access_token ?? null}
+          isDemo={!hasPersistentProjectId}
+          context={assistantContext}
+          onClose={() => setIsAssistantOpen(false)}
+          onNavigate={(tab) => setActiveTab(tab)}
+          onOpenMeeting={(meetingId) => {
+            const targetMeeting =
+              meetingId && confirmedMeetings.some((meeting) => meeting.id === meetingId)
+                ? meetingId
+                : null;
+            setActiveMeetingId(targetMeeting);
+            if (targetMeeting) {
+              setActiveTab("schedule");
+            }
+          }}
+        />
+      ) : null}
       {isInviteModalOpen ? (
         <ShareInviteModal
           copyFeedback={copyFeedback}
@@ -3190,7 +3238,6 @@ function MyTeamsSection({
     | { kind: "leave"; summary: ProfileTeamSummary }
     | { kind: "delete"; summary: ProfileTeamSummary }
   >({ kind: "none" });
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [dialogMessage, setDialogMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -3200,7 +3247,6 @@ function MyTeamsSection({
 
   const closeDialog = () => {
     setDialogState({ kind: "none" });
-    setDeleteConfirmText("");
     setDialogMessage("");
     setIsSubmitting(false);
   };
@@ -3303,19 +3349,11 @@ function MyTeamsSection({
         {dialogState.kind !== "none" ? (
           <TeamActionModal
             action={dialogState.kind}
-            confirmText={deleteConfirmText}
             message={dialogMessage}
             isSubmitting={isSubmitting}
-            teamName={dialogState.summary.team.team_name}
             onClose={closeDialog}
-            onConfirmTextChange={setDeleteConfirmText}
             onAction={async () => {
               if (isSubmitting) {
-                return;
-              }
-
-              if (dialogState.kind === "delete" && deleteConfirmText.trim() !== dialogState.summary.team.team_name) {
-                setDialogMessage("팀 이름을 정확히 입력해야 삭제할 수 있습니다.");
                 return;
               }
 
@@ -3340,42 +3378,29 @@ function MyTeamsSection({
 
 function TeamActionModal({
   action,
-  confirmText,
   isSubmitting,
   message,
   onAction,
   onClose,
-  onConfirmTextChange,
-  teamName,
 }: {
   action: "leave" | "delete";
-  confirmText: string;
   isSubmitting: boolean;
   message: string;
   onAction: () => void;
   onClose: () => void;
-  onConfirmTextChange: (value: string) => void;
-  teamName: string;
 }) {
   const isDelete = action === "delete";
   const body = isDelete
-    ? "팀을 정말 삭제하시겠습니까?\n\n팀의 업무, 회의, 채팅, 회의록, 공강 정보, 파일이 함께 삭제될 수 있습니다.\n이 작업은 되돌릴 수 없습니다."
-    : "이 팀에서 나가시겠습니까?\n다시 참여하려면 초대 코드나 링크가 필요합니다.";
+    ? "팀을 삭제하시겠습니까?\n\n현재 팀의 업무, 회의, 채팅, 회의록, 공강 정보,\n파일과 링크가 함께 삭제될 수 있습니다.\n\n이 작업은 되돌릴 수 없습니다."
+    : "팀에서 나가시겠습니까?\n\n다시 참여하려면 초대 코드가 필요합니다.";
 
   return (
-    <ModalShell title={isDelete ? "팀 삭제" : "팀 나가기"} onClose={onClose} tone="confirm">
+    <ModalShell
+      title={isDelete ? "팀을 삭제하시겠습니까?" : "팀에서 나가시겠습니까?"}
+      onClose={onClose}
+      tone="confirm"
+    >
       <p className="whitespace-pre-line text-[13px] leading-7 text-muted">{body}</p>
-      {isDelete ? (
-        <label className="mt-4 block">
-          <span className="mb-2 block text-[13px] font-semibold text-ink">팀 이름 확인</span>
-          <input
-            value={confirmText}
-            onChange={(event) => onConfirmTextChange(event.target.value)}
-            placeholder={teamName}
-            className="w-full rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
-          />
-        </label>
-      ) : null}
       {message ? (
         <p className="mt-4 rounded-2xl bg-[#f7f9fd] px-4 py-3 text-[12px] leading-6 text-[#445066]">
           {message}
@@ -3392,13 +3417,26 @@ function TeamActionModal({
         <button
           type="button"
           onClick={onAction}
-          disabled={isSubmitting || (isDelete && confirmText.trim() !== teamName)}
-          className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand disabled:opacity-60"
+          disabled={isSubmitting}
+          className={`rounded-2xl px-4 py-3 font-semibold text-white shadow-brand disabled:opacity-60 ${
+            isDelete ? "bg-danger" : "bg-brand"
+          }`}
         >
-          {isSubmitting ? "처리 중..." : isDelete ? "삭제" : "나가기"}
+          {isSubmitting ? "삭제 중..." : isDelete ? "삭제" : "나가기"}
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+function AiSparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 2.5a1 1 0 0 1 .93.63l1.57 3.91 3.91 1.57a1 1 0 0 1 0 1.86l-3.91 1.57-1.57 3.91a1 1 0 0 1-1.86 0l-1.57-3.91-3.91-1.57a1 1 0 0 1 0-1.86l3.91-1.57 1.57-3.91A1 1 0 0 1 12 2.5Zm0 6.41-.77 1.93a1 1 0 0 1-.56.56l-1.93.77 1.93.77a1 1 0 0 1 .56.56l.77 1.93.77-1.93a1 1 0 0 1 .56-.56l1.93-.77-1.93-.77a1 1 0 0 1-.56-.56L12 8.91Z"
+      />
+    </svg>
   );
 }
 
@@ -3547,36 +3585,31 @@ function DrawerButton({
 
 function WorkspaceTeamActionModal({
   action,
-  teamName,
   onClose,
   onConfirm,
 }: {
   action: "leave" | "delete";
-  teamName: string;
   onClose: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: () => Promise<{ ok: boolean; message: string }>;
 }) {
-  const [confirmText, setConfirmText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
   const isDelete = action === "delete";
-  const canConfirm = !isDelete || confirmText.trim() === teamName;
+  const body = isDelete
+    ? "팀을 삭제하시겠습니까?\n\n현재 팀의 업무, 회의, 채팅, 회의록, 공강 정보,\n파일과 링크가 함께 삭제될 수 있습니다.\n\n이 작업은 되돌릴 수 없습니다."
+    : "팀에서 나가시겠습니까?\n\n다시 참여하려면 초대 코드가 필요합니다.";
 
   return (
-    <ModalShell title={isDelete ? "팀 삭제" : "팀 나가기"} onClose={onClose} tone="confirm">
-      <p className="whitespace-pre-line text-[13px] leading-7 text-muted">
-        {isDelete
-          ? "팀을 정말 삭제하시겠습니까?\n\n팀의 업무, 회의, 채팅, 회의록, 공강 정보, 파일이 함께 삭제될 수 있습니다.\n이 작업은 되돌릴 수 없습니다."
-          : "이 팀에서 나가시겠습니까?\n다시 참여하려면 초대 코드나 링크가 필요합니다."}
-      </p>
-      {isDelete ? (
-        <label className="mt-4 block">
-          <span className="mb-2 block text-[13px] font-semibold text-ink">팀 이름 확인</span>
-          <input
-            value={confirmText}
-            onChange={(event) => setConfirmText(event.target.value)}
-            placeholder={teamName}
-            className="w-full rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
-          />
-        </label>
+    <ModalShell
+      title={isDelete ? "팀을 삭제하시겠습니까?" : "팀에서 나가시겠습니까?"}
+      onClose={onClose}
+      tone="confirm"
+    >
+      <p className="whitespace-pre-line text-[13px] leading-7 text-muted">{body}</p>
+      {message ? (
+        <p className="mt-4 rounded-2xl bg-[#f7f9fd] px-4 py-3 text-[12px] leading-6 text-[#445066]">
+          {message}
+        </p>
       ) : null}
       <div className="mt-6 grid grid-cols-2 gap-3">
         <button
@@ -3588,11 +3621,25 @@ function WorkspaceTeamActionModal({
         </button>
         <button
           type="button"
-          disabled={!canConfirm}
-          onClick={() => void onConfirm()}
-          className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand disabled:opacity-60"
+          disabled={isSubmitting}
+          onClick={async () => {
+            if (isSubmitting) {
+              return;
+            }
+
+            setIsSubmitting(true);
+            const result = await onConfirm();
+            setMessage(result.message);
+            if (result.ok) {
+              onClose();
+            }
+            setIsSubmitting(false);
+          }}
+          className={`rounded-2xl px-4 py-3 font-semibold text-white shadow-brand disabled:opacity-60 ${
+            isDelete ? "bg-danger" : "bg-brand"
+          }`}
         >
-          {isDelete ? "삭제" : "나가기"}
+          {isSubmitting ? "삭제 중..." : isDelete ? "삭제" : "나가기"}
         </button>
       </div>
     </ModalShell>
