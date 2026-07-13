@@ -18,21 +18,23 @@ type PeriodOption = {
   start: string;
   end: string;
 };
+type RuleItem = {
+  id: string;
+  text: string;
+  checked: boolean;
+};
 
 const ATTENDANCE_ORDER: AttendanceStatus[] = ["attending", "late", "absent"];
-const ATTENDANCE_META: Record<
-  AttendanceStatus,
-  { label: string; className: string }
-> = {
+const ATTENDANCE_META: Record<AttendanceStatus, { label: string; className: string }> = {
   attending: { label: "참석", className: "bg-emerald-50 text-emerald-600" },
   late: { label: "지각", className: "bg-amber-50 text-amber-600" },
   absent: { label: "불참", className: "bg-rose-50 text-rose-600" },
 };
 
-const INITIAL_RULES = [
+const INITIAL_RULES: RuleItem[] = [
   { id: "r1", text: "회의 시작 10분 전까지 입장하기", checked: true },
-  { id: "r2", text: "논의 안건은 짧고 명확하게 정리하기", checked: true },
-  { id: "r3", text: "종료 전에 바로 다음 할 일을 확정하기", checked: false },
+  { id: "r2", text: "안건은 짧고 명확하게 정리하기", checked: true },
+  { id: "r3", text: "회의 종료 전에 다음 할 일 정하기", checked: false },
 ];
 
 const MEETING_STATUS_META = {
@@ -186,6 +188,7 @@ function getPeriodLabelFromRange(timeRange: string) {
   const matched = ALL_PERIODS.filter(
     (period) => period.start >= start && period.start < end,
   );
+
   if (matched.length === 0) {
     return timeRange;
   }
@@ -280,7 +283,10 @@ export function ScheduleTab({
   const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceStatus>>(
     {},
   );
-  const [rules, setRules] = useState(INITIAL_RULES);
+  const [rules, setRules] = useState<RuleItem[]>(INITIAL_RULES);
+  const [ruleInput, setRuleInput] = useState("");
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editingRuleText, setEditingRuleText] = useState("");
   const [showNightPeriods, setShowNightPeriods] = useState(false);
   const [rangeAnchor, setRangeAnchor] = useState<{
     dayIndex: number;
@@ -411,6 +417,45 @@ export function ScheduleTab({
     setRangeAnchor(null);
   };
 
+  const handleAddRule = () => {
+    const trimmed = ruleInput.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setRules((current) => [
+      ...current,
+      { id: `rule-${Date.now()}`, text: trimmed, checked: false },
+    ]);
+    setRuleInput("");
+  };
+
+  const handleStartEditRule = (rule: RuleItem) => {
+    setEditingRuleId(rule.id);
+    setEditingRuleText(rule.text);
+  };
+
+  const handleSaveRule = (ruleId: string) => {
+    const trimmed = editingRuleText.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setRules((current) =>
+      current.map((rule) => (rule.id === ruleId ? { ...rule, text: trimmed } : rule)),
+    );
+    setEditingRuleId(null);
+    setEditingRuleText("");
+  };
+
+  const handleDeleteRule = (ruleId: string) => {
+    setRules((current) => current.filter((rule) => rule.id !== ruleId));
+    if (editingRuleId === ruleId) {
+      setEditingRuleId(null);
+      setEditingRuleText("");
+    }
+  };
+
   return (
     <div className="space-y-4 pb-4">
       {localToast ? (
@@ -422,9 +467,9 @@ export function ScheduleTab({
       <section className="rounded-[26px] border-l-4 border-[#6259e8] bg-white p-5 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold text-[#7b74ee]">이번 주 회의 플랜</p>
+            <p className="text-[11px] font-bold text-[#7b74ee]">이번 주 회의 관리</p>
             <h2 className="mt-2 text-[23px] font-extrabold leading-7 text-[#262236]">
-              일정과 회의를 한 곳에 정리
+              일정과 회의를 한 곳에서 정리
             </h2>
           </div>
           <div className="flex flex-col gap-2">
@@ -443,7 +488,7 @@ export function ScheduleTab({
           </div>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <MiniStat label="남은 일정" value={`${slots.length + meetings.length}개`} />
+          <MiniStat label="전체 일정" value={`${slots.length + meetings.length}개`} />
           <MiniStat label="참여 인원" value={`${activeMembers.length}명`} />
         </div>
       </section>
@@ -451,23 +496,16 @@ export function ScheduleTab({
       <section className="rounded-[26px] border border-[#eeeaf7] bg-white p-4 shadow-card">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold text-[#7b74ee]">내 공강 시간 입력</p>
+            <p className="text-[11px] font-bold text-[#7b74ee]">팀 공강 입력</p>
             <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b]">
               {editableMember
-                ? `${editableMember.name}님의 공강 시간`
-                : "공강 시간을 입력하려면 팀원 연결이 필요합니다"}
+                ? `${editableMember.name}의 공강 시간`
+                : "공강 시간을 입력하려면 팀원 연결이 필요합니다."}
             </h3>
             <p className="mt-2 text-[11px] leading-5 text-[#938ca1]">
-              시작 교시와 마지막 교시를 선택하면 사이 시간이 자동으로 선택됩니다.
+              시작 교시와 마지막 교시를 선택하면 사이 시간도 함께 선택됩니다.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setLocalToast("추후 업데이트 예정입니다.")}
-            className="rounded-2xl border border-[#dcd6ff] bg-white px-3 py-2 text-[10px] font-bold text-[#6259e8]"
-          >
-            에브리타임 시간표 가져오기
-          </button>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1.55fr,0.9fr]">
@@ -510,7 +548,7 @@ export function ScheduleTab({
                 {availabilityLoading
                   ? "공강 불러오는 중"
                   : hasAvailabilityChanges
-                    ? "저장되지 않은 변경사항이 있습니다."
+                    ? "저장되지 않은 변경 사항이 있습니다."
                     : "저장된 공강 상태입니다."}
               </p>
             </div>
@@ -518,22 +556,22 @@ export function ScheduleTab({
 
           <div className="space-y-3">
             <StatCard
-              title="내 공강 현황"
+              title="내 공강 요약"
               rows={[
                 { label: "총 공강", value: `${myAvailabilityStats.total}교시` },
-                { label: "가장 공강이 많은 요일", value: myAvailabilityStats.busiestDay },
-                { label: "가장 공강이 적은 요일", value: myAvailabilityStats.quietDay },
+                { label: "가장 여유 있는 요일", value: myAvailabilityStats.busiestDay },
+                { label: "가장 적은 요일", value: myAvailabilityStats.quietDay },
               ]}
             />
             <StatCard
-              title="팀 공강"
+              title="팀 공강 요약"
               rows={[
                 {
-                  label: "전체 팀원이 가능한 시간",
+                  label: "전원 가능 시간",
                   value: `${teamAvailabilityStats.allMemberCount}개`,
                 },
                 {
-                  label: "3명 이상 가능한 시간",
+                  label: "3명 이상 가능 시간",
                   value: `${teamAvailabilityStats.threePlusCount}개`,
                 },
                 {
@@ -563,7 +601,7 @@ export function ScheduleTab({
         <div className="mt-4 flex items-center justify-between gap-3">
           <p className="text-[12px] font-semibold text-[#938ca1]">
             {hasAvailabilityChanges
-              ? "저장되지 않은 변경사항이 있습니다."
+              ? "저장되지 않은 변경 사항이 있습니다."
               : "선택한 공강 시간이 저장된 상태와 같습니다."}
           </p>
           <button
@@ -587,7 +625,10 @@ export function ScheduleTab({
             const preset = getPresetForSlot(slot);
             const rating = Math.max(
               1,
-              Math.min(5, Math.round((availableNames.length / Math.max(activeMembers.length, 1)) * 5)),
+              Math.min(
+                5,
+                Math.round((availableNames.length / Math.max(activeMembers.length, 1)) * 5),
+              ),
             );
 
             return (
@@ -611,12 +652,19 @@ export function ScheduleTab({
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                  <InfoTile label="가능 인원" value={`${availableNames.length} / ${activeMembers.length}명 가능`} />
-                  <InfoTile label="추천 이유" value={availableNames.length === activeMembers.length ? "모든 팀원이 참석 가능하며 오후 시간대입니다." : "여러 팀원이 겹치는 시간대라 회의 잡기가 수월합니다."} />
+                  <InfoTile label="가능 인원" value={`${availableNames.length} / ${activeMembers.length}명`} />
+                  <InfoTile
+                    label="추천 이유"
+                    value={
+                      availableNames.length === activeMembers.length
+                        ? "모든 팀원이 참석 가능한 우선 시간입니다."
+                        : "여러 팀원이 겹치는 시간이라 회의 잡기가 수월합니다."
+                    }
+                  />
                 </div>
 
                 <div className="mt-4 rounded-2xl bg-[#faf9ff] px-4 py-3">
-                  <p className="text-[11px] font-bold text-[#6259e8]">가능</p>
+                  <p className="text-[11px] font-bold text-[#6259e8]">가능 인원</p>
                   <p className="mt-2 text-[12px] leading-6 text-[#5d5768]">
                     {availableNames.length > 0 ? availableNames.join(" · ") : "가능 인원 정보 없음"}
                   </p>
@@ -646,11 +694,16 @@ export function ScheduleTab({
         )}
       </div>
 
-      <SectionTitle title="프로젝트 타임라인" action="회의 만들기" onClick={() => onCreateMeeting()} />
+      <SectionTitle title="프로젝트 회의" action="회의 만들기" onClick={() => onCreateMeeting()} />
       <div className="space-y-3">
         {meetings.length > 0 ? (
           meetings.map((meeting, index) => {
             const statusMeta = MEETING_STATUS_META[meeting.status];
+            const hasAiNote = Boolean(meeting.aiSummary || meeting.noteId);
+            const hasTransferredTasks = Boolean(
+              meeting.aiActionItems?.length &&
+                meeting.aiActionItems.every((item) => item.transferred),
+            );
 
             return (
               <article
@@ -677,6 +730,21 @@ export function ScheduleTab({
                     </p>
                   </div>
                 </div>
+
+                {hasAiNote || hasTransferredTasks ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {hasAiNote ? (
+                      <span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[9px] font-bold text-[#1e70e6]">
+                        AI 회의록 있음
+                      </span>
+                    ) : null}
+                    {hasTransferredTasks ? (
+                      <span className="rounded-full bg-[#ebfaf1] px-2 py-1 text-[9px] font-bold text-[#15803d]">
+                        Tasks 생성 완료
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {activeMembers.map((member) => {
@@ -716,36 +784,123 @@ export function ScheduleTab({
             );
           })
         ) : (
-          <Empty text="확정된 회의가 아직 없습니다." />
+          <Empty text="아직 생성된 회의가 없습니다." />
         )}
       </div>
 
       <SectionTitle title="팀 회의 규칙" />
-      <section className="space-y-2 rounded-[22px] bg-white p-4 shadow-card">
-        {rules.map((rule) => (
+      <section className="space-y-3 rounded-[22px] bg-white p-4 shadow-card">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={ruleInput}
+            onChange={(event) => setRuleInput(event.target.value)}
+            placeholder="회의 규칙을 추가해보세요."
+            className="flex-1 rounded-2xl border border-line bg-white px-4 py-3 text-[12px] outline-none transition focus:border-brand"
+          />
           <button
-            key={rule.id}
-            onClick={() =>
-              setRules((prev) =>
-                prev.map((item) =>
-                  item.id === rule.id ? { ...item, checked: !item.checked } : item,
-                ),
-              )
-            }
-            className="flex w-full items-center gap-3 rounded-2xl bg-[#faf9ff] px-3 py-3 text-left"
+            type="button"
+            onClick={handleAddRule}
+            disabled={!ruleInput.trim()}
+            className="rounded-2xl bg-[#6259e8] px-4 py-3 text-[11px] font-bold text-white disabled:opacity-60"
           >
-            <span
-              className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] ${
-                rule.checked
-                  ? "bg-[#6259e8] text-white"
-                  : "border border-[#dcd7e8] text-transparent"
-              }`}
-            >
-              ✓
-            </span>
-            <span className="text-[11px] font-semibold text-[#5d5768]">{rule.text}</span>
+            추가
           </button>
-        ))}
+        </div>
+
+        {rules.length > 0 ? (
+          rules.map((rule) => {
+            const isEditing = editingRuleId === rule.id;
+
+            return (
+              <div
+                key={rule.id}
+                className="rounded-2xl bg-[#faf9ff] px-3 py-3"
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRules((current) =>
+                        current.map((item) =>
+                          item.id === rule.id ? { ...item, checked: !item.checked } : item,
+                        ),
+                      )
+                    }
+                    className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-md"
+                  >
+                    <span
+                      className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] ${
+                        rule.checked
+                          ? "bg-[#6259e8] text-white"
+                          : "border border-[#dcd7e8] text-transparent"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editingRuleText}
+                        onChange={(event) => setEditingRuleText(event.target.value)}
+                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-[12px] outline-none transition focus:border-brand"
+                      />
+                    ) : (
+                      <p className="text-[11px] font-semibold text-[#5d5768]">{rule.text}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 flex justify-end gap-2">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingRuleId(null);
+                          setEditingRuleText("");
+                        }}
+                        className="rounded-full px-3 py-1 text-[10px] font-bold text-[#8a8397]"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveRule(rule.id)}
+                        disabled={!editingRuleText.trim()}
+                        className="rounded-full px-3 py-1 text-[10px] font-bold text-[#6259e8] disabled:opacity-60"
+                      >
+                        저장
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditRule(rule)}
+                        className="rounded-full px-3 py-1 text-[10px] font-bold text-[#6259e8]"
+                      >
+                        ✏ 수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRule(rule.id)}
+                        className="rounded-full px-3 py-1 text-[10px] font-bold text-rose-500"
+                      >
+                        삭제
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <Empty text="회의 규칙을 추가해보세요." />
+        )}
       </section>
     </div>
   );
@@ -788,8 +943,7 @@ function PeriodRow({
         const isAnchor =
           rangeAnchor?.dayIndex === dayIndex && rangeAnchor.periodIndex === periodIndex;
 
-        let className =
-          "border-[#e7e2f0] bg-white text-[#938ca1]";
+        let className = "border-[#e7e2f0] bg-white text-[#938ca1]";
 
         if (isSelected) {
           className = "border-emerald-500 bg-emerald-500 text-white";
@@ -830,10 +984,7 @@ function StatCard({
       <p className="text-[11px] font-bold text-[#7b74ee]">{title}</p>
       <div className="mt-3 space-y-3">
         {rows.map((row) => (
-          <div
-            key={row.label}
-            className="rounded-2xl bg-[#faf9ff] px-3 py-3"
-          >
+          <div key={row.label} className="rounded-2xl bg-[#faf9ff] px-3 py-3">
             <p className="text-[10px] font-semibold text-[#938ca1]">{row.label}</p>
             <p className="mt-1 text-[13px] font-extrabold text-[#2d293b]">{row.value}</p>
           </div>

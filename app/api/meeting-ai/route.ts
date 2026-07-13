@@ -10,28 +10,34 @@ type MeetingAiRequest = {
 type MeetingAiActionItem = {
   title: string;
   assigneeName: string;
+  priority: "high" | "medium" | "low";
   dueDateOffsetDays: number;
 };
 
 type MeetingAiResponse = {
   summary: string;
   decisions: string[];
+  unresolvedItems: string[];
   actionItems: MeetingAiActionItem[];
 };
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 
-function buildPrompt(input: Required<Pick<MeetingAiRequest, "title" | "content">> & {
-  members: string[];
-}) {
+function buildPrompt(
+  input: Required<Pick<MeetingAiRequest, "title" | "content">> & {
+    members: string[];
+  },
+) {
   return [
     "당신은 대학생 팀 프로젝트 회의 요약 도우미다.",
     "반드시 JSON만 반환하라.",
     "summary는 2~4문장 한국어 요약이다.",
-    "decisions는 결정사항 문자열 배열이다.",
-    "actionItems는 title, assigneeName, dueDateOffsetDays를 가진 배열이다.",
-    "assigneeName은 가능한 경우 실제 참여자 이름 중 하나를 고르고, 불명확하면 빈 문자열을 사용하라.",
-    "dueDateOffsetDays는 오늘 기준 정수 일수이며, 없으면 3을 사용하라.",
+    "decisions는 이미 결정된 사항 문자열 배열이다.",
+    "unresolvedItems는 아직 미결정인 사항 문자열 배열이다.",
+    "actionItems는 title, assigneeName, priority, dueDateOffsetDays를 가진 배열이다.",
+    "assigneeName은 가능하면 실제 참여자 이름 중 하나를 사용하고, 불명확하면 빈 문자열을 사용하라.",
+    "priority는 high, medium, low 중 하나다.",
+    "dueDateOffsetDays는 오늘 기준 정수 일수이며, 불명확하면 3을 사용하라.",
     `회의 제목: ${input.title}`,
     `참여자 후보: ${input.members.join(", ") || "없음"}`,
     "회의 대화:",
@@ -55,10 +61,7 @@ function extractTextCandidates(value: unknown): string[] {
   const record = value as Record<string, unknown>;
   const directText = typeof record.text === "string" ? [record.text] : [];
 
-  return [
-    ...directText,
-    ...Object.values(record).flatMap(extractTextCandidates),
-  ];
+  return [...directText, ...Object.values(record).flatMap(extractTextCandidates)];
 }
 
 function tryParseJsonBlock(text: string) {
@@ -92,10 +95,18 @@ function normalizeAiPayload(value: unknown): MeetingAiResponse | null {
   }
 
   const record = value as Record<string, unknown>;
-  const summary =
-    typeof record.summary === "string" ? record.summary.trim() : "";
+  const summary = typeof record.summary === "string" ? record.summary.trim() : "";
   const decisions = Array.isArray(record.decisions)
-    ? record.decisions.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+    ? record.decisions
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+  const unresolvedItems = Array.isArray(record.unresolvedItems)
+    ? record.unresolvedItems
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
     : [];
   const actionItems = Array.isArray(record.actionItems)
     ? record.actionItems
@@ -115,6 +126,12 @@ function normalizeAiPayload(value: unknown): MeetingAiResponse | null {
             typeof actionRecord.assigneeName === "string"
               ? actionRecord.assigneeName.trim()
               : "";
+          const priority =
+            actionRecord.priority === "high" ||
+            actionRecord.priority === "medium" ||
+            actionRecord.priority === "low"
+              ? actionRecord.priority
+              : "medium";
           const dueDateOffsetDays =
             typeof actionRecord.dueDateOffsetDays === "number" &&
             Number.isFinite(actionRecord.dueDateOffsetDays)
@@ -124,6 +141,7 @@ function normalizeAiPayload(value: unknown): MeetingAiResponse | null {
           return {
             title,
             assigneeName,
+            priority,
             dueDateOffsetDays,
           };
         })
@@ -137,6 +155,7 @@ function normalizeAiPayload(value: unknown): MeetingAiResponse | null {
   return {
     summary,
     decisions,
+    unresolvedItems,
     actionItems,
   };
 }
@@ -163,7 +182,10 @@ export async function POST(request: Request) {
   const title = body.title?.trim();
   const content = body.content?.trim();
   const members = Array.isArray(body.members)
-    ? body.members.filter((member): member is string => typeof member === "string").map((member) => member.trim()).filter(Boolean)
+    ? body.members
+        .filter((member): member is string => typeof member === "string")
+        .map((member) => member.trim())
+        .filter(Boolean)
     : [];
 
   if (!meetingId || !title || !content) {
@@ -184,6 +206,10 @@ export async function POST(request: Request) {
           type: "array",
           items: { type: "string" },
         },
+        unresolvedItems: {
+          type: "array",
+          items: { type: "string" },
+        },
         actionItems: {
           type: "array",
           items: {
@@ -191,13 +217,14 @@ export async function POST(request: Request) {
             properties: {
               title: { type: "string" },
               assigneeName: { type: "string" },
+              priority: { type: "string", enum: ["high", "medium", "low"] },
               dueDateOffsetDays: { type: "integer" },
             },
-            required: ["title", "assigneeName", "dueDateOffsetDays"],
+            required: ["title", "assigneeName", "priority", "dueDateOffsetDays"],
           },
         },
       },
-      required: ["summary", "decisions", "actionItems"],
+      required: ["summary", "decisions", "unresolvedItems", "actionItems"],
     },
   };
 
@@ -258,7 +285,7 @@ export async function POST(request: Request) {
 
   if (!parsedPayload) {
     return NextResponse.json(
-      { error: "Gemini 응답이 비어 있거나 JSON 파싱에 실패했습니다." },
+      { error: "Gemini 응답이 비었거나 JSON 파싱에 실패했습니다." },
       { status: 502 },
     );
   }

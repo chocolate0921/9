@@ -63,6 +63,7 @@ export type ConfirmedMeeting = {
   timeRange: string;
   attendeeCount: number;
   status: MeetingStatus;
+  agenda?: string | null;
   createdByMemberId?: string | null;
   startsAt?: string;
   endsAt?: string | null;
@@ -70,13 +71,17 @@ export type ConfirmedMeeting = {
   isEnded?: boolean;
   aiSummary?: string;
   aiDecisions?: string[];
+  aiUnresolvedItems?: string[];
   aiActionItems?: MeetingActionItem[];
   noteId?: string;
+  pinnedMessages?: MeetingMessage[];
 };
 
 export type MeetingActionItem = {
   title: string;
   assigneeName: string;
+  priority?: TaskPriority;
+  dueAt?: string | null;
   dueDateOffsetDays: number;
   transferred?: boolean;
   taskId?: string | null;
@@ -97,8 +102,11 @@ export type MeetingNote = {
   meetingId: string | null;
   title: string;
   content: string;
+  agenda: string | null;
+  pinnedMessages: MeetingMessage[];
   aiSummary: string | null;
   aiDecisions: string[];
+  aiUnresolvedItems: string[];
   aiActionItems: MeetingActionItem[];
   createdAt: string;
 };

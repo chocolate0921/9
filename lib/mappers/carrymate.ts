@@ -1,4 +1,5 @@
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
+import { parseMeetingNoteContent } from "@/lib/carrymate/meeting-note-content";
 import {
   MeetingMessageRow,
   MeetingNoteRow,
@@ -213,6 +214,18 @@ function normalizeActionItemList(value: unknown): MeetingActionItem[] {
         title,
         assigneeName:
           typeof record.assigneeName === "string" ? record.assigneeName : "",
+        priority:
+          record.priority === "high" ||
+          record.priority === "medium" ||
+          record.priority === "low"
+            ? record.priority
+            : undefined,
+        dueAt:
+          typeof record.dueAt === "string"
+            ? record.dueAt
+            : record.dueAt === null
+              ? null
+              : undefined,
         dueDateOffsetDays:
           typeof record.dueDateOffsetDays === "number" &&
           Number.isFinite(record.dueDateOffsetDays)
@@ -231,14 +244,19 @@ function normalizeActionItemList(value: unknown): MeetingActionItem[] {
 }
 
 export function mapMeetingNoteRowToMeetingNote(row: MeetingNoteRow): MeetingNote {
+  const parsedContent = parseMeetingNoteContent(row.content);
+
   return {
     id: row.id,
     teamId: row.team_id,
     meetingId: row.meeting_id,
     title: row.title,
-    content: row.content,
+    content: parsedContent.transcript,
+    agenda: parsedContent.agenda,
+    pinnedMessages: parsedContent.pinnedMessages,
     aiSummary: row.ai_summary,
     aiDecisions: normalizeDecisionList(row.ai_decisions),
+    aiUnresolvedItems: parsedContent.aiUnresolvedItems,
     aiActionItems: normalizeActionItemList(row.ai_action_items),
     createdAt: row.created_at,
   };

@@ -51,6 +51,10 @@ export type CreateMeetingMessageInput = {
   message: string;
 };
 
+export type UpdateMeetingMessageInput = {
+  message: string;
+};
+
 export type CreateMeetingNoteInput = {
   teamId: string;
   meetingId?: string | null;
@@ -379,6 +383,41 @@ export async function getMeetingNoteByMeetingId(
   };
 }
 
+export async function getMeetingNotesByTeam(
+  teamId: string,
+): Promise<MeetingResult<MeetingNoteRow[]>> {
+  const configError = ensureSupabaseConfig();
+  if (configError) {
+    return configError;
+  }
+
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/meeting_notes?team_id=eq.${encodeURIComponent(teamId)}&select=*&order=created_at.desc`,
+    {
+      method: "GET",
+      headers: {
+        apikey: supabasePublishableKey,
+        Authorization: `Bearer ${supabasePublishableKey}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await parseErrorMessage(response);
+    return {
+      ok: false,
+      message: `회의 노트 목록 조회 실패: ${detail}`,
+    };
+  }
+
+  const rows = (await response.json()) as MeetingNoteRow[];
+  return {
+    ok: true,
+    data: rows,
+    message: "회의 노트 목록 조회 성공",
+  };
+}
+
 export async function createMeetingNote(
   input: CreateMeetingNoteInput,
 ): Promise<MeetingResult<MeetingNoteRow>> {
@@ -457,5 +496,71 @@ export async function createMeetingNote(
     ok: true,
     data: rows[0],
     message: "회의 노트 저장 성공",
+  };
+}
+
+export async function updateMeetingMessage(
+  messageId: string,
+  input: UpdateMeetingMessageInput,
+): Promise<MeetingResult<MeetingMessageRow>> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("meeting_messages")
+    .update({
+      message: input.message.trim(),
+    })
+    .eq("id", messageId)
+    .select("*")
+    .single();
+
+  if (error) {
+    return {
+      ok: false,
+      message: `회의 메시지 수정 실패: ${error.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data: data as MeetingMessageRow,
+    message: "회의 메시지 수정 성공",
+  };
+}
+
+export async function deleteMeetingMessage(
+  messageId: string,
+): Promise<MeetingResult<null>> {
+  const supabase = getSupabaseBrowserClient();
+
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        "Supabase 환경변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 확인해 주세요.",
+    };
+  }
+
+  const { error } = await supabase.from("meeting_messages").delete().eq("id", messageId);
+
+  if (error) {
+    return {
+      ok: false,
+      message: `회의 메시지 삭제 실패: ${error.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data: null,
+    message: "회의 메시지 삭제 성공",
   };
 }

@@ -14,6 +14,7 @@ import {
   formatTaskDueLabel,
   getMeetingStatus,
   isUuid,
+  mapMeetingNoteRowToMeetingNote,
   mapMeetingRowsToConfirmedMeetings,
   mapTeamRowToProject,
   mapTaskRowsToTasks,
@@ -22,8 +23,11 @@ import {
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
 import {
   createMeeting,
+  createMeetingNote,
   getMeetingsByTeam,
+  getMeetingNotesByTeam,
 } from "@/lib/supabase/meetings";
+import { serializeMeetingNoteContent } from "@/lib/carrymate/meeting-note-content";
 import {
   getAvailabilityByTeam,
   normalizeAvailabilityTime,
@@ -63,10 +67,10 @@ import {
 } from "@/lib/supabase/teams";
 import {
   ConfirmedMeeting,
-  FileCategory,
   FileItem,
   HealthStatus,
   MeetingActionItem,
+  MeetingNote,
   Project,
   ScheduleSlot,
   TabId,
@@ -76,7 +80,7 @@ import {
 } from "@/types/carrymate";
 
 type ViewMode = "onboarding" | "workspace";
-type WorkspaceSheetMode = "task" | "schedule" | "meeting" | "file" | null;
+type WorkspaceSheetMode = "task" | "schedule" | "meeting" | null;
 type OnboardingSheetMode =
   | "createTeam"
   | "joinTeam"
@@ -89,6 +93,7 @@ type MeetingDraftInput = {
   title: string;
   startsAt: string;
   endsAt: string;
+  agenda: string;
 };
 
 type ProjectSummary = {
@@ -211,6 +216,39 @@ function formatMeetingDateLabel(startsAt: string) {
   }
 
   return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+}
+
+function mergeMeetingsWithNotes(
+  meetings: ConfirmedMeeting[],
+  notes: MeetingNote[],
+) {
+  const noteByMeetingId = new Map<string, MeetingNote>();
+
+  notes.forEach((note) => {
+    if (!note.meetingId || noteByMeetingId.has(note.meetingId)) {
+      return;
+    }
+
+    noteByMeetingId.set(note.meetingId, note);
+  });
+
+  return meetings.map((meeting) => {
+    const note = noteByMeetingId.get(meeting.id);
+    if (!note) {
+      return meeting;
+    }
+
+    return {
+      ...meeting,
+      agenda: note.agenda,
+      aiSummary: note.aiSummary ?? undefined,
+      aiDecisions: note.aiDecisions,
+      aiUnresolvedItems: note.aiUnresolvedItems,
+      aiActionItems: note.aiActionItems,
+      noteId: note.id,
+      pinnedMessages: note.pinnedMessages,
+    };
+  });
 }
 
 function formatMeetingTimeRange(startsAt: string, endsAt?: string | null) {
@@ -668,20 +706,29 @@ export function CarryMateApp({
     let cancelled = false;
 
     const loadMeetings = async () => {
-      const result = await getMeetingsByTeam(project.id);
+      const [meetingResult, noteResult] = await Promise.all([
+        getMeetingsByTeam(project.id),
+        getMeetingNotesByTeam(project.id),
+      ]);
 
       if (cancelled) {
         return;
       }
 
-      if (!result.ok || !result.data) {
-        console.error(result.message);
-        setMeetingSyncMessage(result.message);
+      if (!meetingResult.ok || !meetingResult.data) {
+        console.error(meetingResult.message);
+        setMeetingSyncMessage(meetingResult.message);
         return;
       }
 
-      setConfirmedMeetings(mapMeetingRowsToConfirmedMeetings(result.data));
-      setMeetingSyncMessage("");
+      const mappedMeetings = mapMeetingRowsToConfirmedMeetings(meetingResult.data);
+      const mappedNotes =
+        noteResult.ok && noteResult.data
+          ? noteResult.data.map(mapMeetingNoteRowToMeetingNote)
+          : [];
+
+      setConfirmedMeetings(mergeMeetingsWithNotes(mappedMeetings, mappedNotes));
+      setMeetingSyncMessage(noteResult.ok ? "" : noteResult.message);
     };
 
     void loadMeetings();
@@ -1032,12 +1079,13 @@ export function CarryMateApp({
     setMemberSyncMessage("실제 팀원 정보를 불러오는 중입니다.");
     setMeetingSyncMessage("실제 팀 회의를 불러오는 중입니다.");
 
-    const [teamResult, teamMembersResult, tasksResult, meetingsResult] =
+    const [teamResult, teamMembersResult, tasksResult, meetingsResult, notesResult] =
       await Promise.all([
         getTeamById(options.teamId),
         getTeamMembersByTeam(options.teamId),
         getTasksByTeam(options.teamId),
         getMeetingsByTeam(options.teamId),
+        getMeetingNotesByTeam(options.teamId),
       ]);
 
     if (!teamResult.ok || !teamResult.data) {
@@ -1101,11 +1149,15 @@ export function CarryMateApp({
     setTasks(
       tasksResult.ok && tasksResult.data ? mapTaskRowsToTasks(tasksResult.data) : [],
     );
-    setConfirmedMeetings(
+    const mappedMeetings =
       meetingsResult.ok && meetingsResult.data
         ? mapMeetingRowsToConfirmedMeetings(meetingsResult.data)
-        : [],
-    );
+        : [];
+    const mappedNotes =
+      notesResult.ok && notesResult.data
+        ? notesResult.data.map(mapMeetingNoteRowToMeetingNote)
+        : [];
+    setConfirmedMeetings(mergeMeetingsWithNotes(mappedMeetings, mappedNotes));
     setScheduleSlots([]);
     setFiles([]);
     setCurrentMember(
@@ -1123,7 +1175,13 @@ export function CarryMateApp({
     setActiveMeetingId(null);
     setTaskSyncMessage(tasksResult.ok ? "" : tasksResult.message);
     setMemberSyncMessage(teamMembersResult.ok ? "" : teamMembersResult.message);
-    setMeetingSyncMessage(meetingsResult.ok ? "" : meetingsResult.message);
+    setMeetingSyncMessage(
+      meetingsResult.ok
+        ? notesResult.ok
+          ? ""
+          : notesResult.message
+        : meetingsResult.message,
+    );
     setWorkspaceLoadMessage("");
     setIsWorkspaceLoading(false);
     setIsRestoringWorkspace(false);
@@ -1693,10 +1751,12 @@ export function CarryMateApp({
     title: string;
     startsAt: string;
     endsAt: string;
+    agenda: string;
   }) => {
     const trimmedTitle = input.title.trim();
     const startsAtInput = input.startsAt.trim();
     const endsAtInput = input.endsAt.trim();
+    const trimmedAgenda = input.agenda.trim();
 
     if (!trimmedTitle || !startsAtInput) {
       setMeetingSyncMessage("회의 제목과 시작 시각을 입력해 주세요.");
@@ -1730,6 +1790,7 @@ export function CarryMateApp({
       createdByMemberId: currentMember?.id ?? null,
       startsAt,
       endsAt: endsAt || null,
+      agenda: trimmedAgenda || null,
       teamId: hasPersistentProjectId ? project.id : undefined,
       isEnded: getMeetingStatus({
         startsAt,
@@ -1759,7 +1820,39 @@ export function CarryMateApp({
     }
 
     const persistedMeeting = mapMeetingRowsToConfirmedMeetings([result.data])[0];
-    setConfirmedMeetings((current) => [persistedMeeting, ...current]);
+    let nextPersistedMeeting: ConfirmedMeeting = {
+      ...persistedMeeting,
+      agenda: trimmedAgenda || null,
+    };
+
+    if (trimmedAgenda) {
+      const noteResult = await createMeetingNote({
+        teamId: project.id,
+        meetingId: result.data.id,
+        title: `${trimmedTitle} 회의록`,
+        content: serializeMeetingNoteContent({
+          transcript: "",
+          agenda: trimmedAgenda,
+          pinnedMessages: [],
+          aiUnresolvedItems: [],
+        }),
+        aiSummary: null,
+        aiDecisions: [],
+        aiActionItems: [],
+      });
+
+      if (noteResult.ok && noteResult.data) {
+        const savedNote = mapMeetingNoteRowToMeetingNote(noteResult.data);
+        nextPersistedMeeting = {
+          ...nextPersistedMeeting,
+          agenda: savedNote.agenda,
+          noteId: savedNote.id,
+          pinnedMessages: savedNote.pinnedMessages,
+        };
+      }
+    }
+
+    setConfirmedMeetings((current) => [nextPersistedMeeting, ...current]);
     setMeetingSyncMessage("");
     setActiveTab("schedule");
     closeSheet();
@@ -1813,32 +1906,6 @@ export function CarryMateApp({
       setMeetingSyncMessage("");
       setActiveTab("schedule");
     })();
-  };
-
-  const handleUploadFile = (category: FileCategory) => {
-    // 파일 업로드는 실제 스토리지 업로드 대신
-    // 파일 목록 state에 더미 항목을 삽입하는 방식으로 처리한다.
-    const categoryLabelMap: Record<FileCategory, string> = {
-      minutes: "회의록",
-      materials: "과제자료",
-      links: "참고링크",
-    };
-    const uploader = activeMembers[0];
-
-    const nextFile: FileItem = {
-      id: `file-${Date.now()}`,
-      name: `${categoryLabelMap[category]}_${files.length + 1}`,
-      category,
-      uploadedBy: uploader?.name ?? "팀원",
-      uploadedByMemberId: uploader?.id ?? null,
-      uploadedAt: "방금 전",
-      statusLabel: "초안",
-      isFinal: false,
-    };
-
-    setFiles((current) => [nextFile, ...current]);
-    setActiveTab("files");
-    closeSheet();
   };
 
   const handleMarkFinal = (fileId: string) => {
@@ -1962,16 +2029,27 @@ export function CarryMateApp({
       const demoTasks = items.map(({ item }, index) => {
         const assignee = members.find((member) => member.name === item.assigneeName);
         const dueAt = new Date();
-        dueAt.setDate(dueAt.getDate() + item.dueDateOffsetDays);
+        const dueAtIso = item.dueAt ?? dueAt.toISOString();
+        const resolvedDueAt = new Date(dueAtIso);
+        if (Number.isNaN(resolvedDueAt.getTime())) {
+          dueAt.setDate(dueAt.getDate() + item.dueDateOffsetDays);
+        }
 
         return {
           id: `task-${Date.now()}-${index}`,
           title: item.title,
           assigneeId: assignee?.id ?? null,
           status: "todo" as const,
-          priority: "medium" as const,
-          dueLabel: formatTaskDueLabel(dueAt.toISOString(), null),
-          dueAt: dueAt.toISOString(),
+          priority: item.priority ?? ("medium" as const),
+          dueLabel: formatTaskDueLabel(
+            Number.isNaN(resolvedDueAt.getTime())
+              ? dueAt.toISOString()
+              : resolvedDueAt.toISOString(),
+            null,
+          ),
+          dueAt: Number.isNaN(resolvedDueAt.getTime())
+            ? dueAt.toISOString()
+            : resolvedDueAt.toISOString(),
           aiSuggestedRole: "회의 AI 추천 업무",
         };
       });
@@ -1996,17 +2074,19 @@ export function CarryMateApp({
 
     for (const { key, item } of items) {
       const assignee = members.find((member) => member.name === item.assigneeName);
-      const dueAt = new Date();
-      dueAt.setHours(18, 0, 0, 0);
-      dueAt.setDate(dueAt.getDate() + item.dueDateOffsetDays);
+      const resolvedDueAt = item.dueAt ? new Date(item.dueAt) : new Date();
+      if (Number.isNaN(resolvedDueAt.getTime())) {
+        resolvedDueAt.setHours(18, 0, 0, 0);
+        resolvedDueAt.setDate(resolvedDueAt.getDate() + item.dueDateOffsetDays);
+      }
 
       const result = await createTask({
         teamId: project.id,
         title: item.title,
         assigneeId: assignee?.id ?? null,
         status: "todo",
-        priority: "medium",
-        dueAt: dueAt.toISOString(),
+        priority: item.priority ?? "medium",
+        dueAt: resolvedDueAt.toISOString(),
         aiSuggestedRole: `회의 "${meeting.title}" AI 추천 업무`,
       });
 
@@ -2159,7 +2239,7 @@ export function CarryMateApp({
       );
     }
 
-    return <UploadSheet onClose={closeSheet} onUpload={handleUploadFile} />;
+    return null;
   };
 
   const renderOnboardingSheet = () => {
@@ -2408,17 +2488,15 @@ export function CarryMateApp({
               <button
                 type="button"
                 onClick={() =>
-                  openSheet(
-                    activeTab === "tasks"
-                      ? "task"
-                      : activeTab === "schedule"
-                        ? "schedule"
-                        : "file",
-                  )
+                  activeTab === "tasks"
+                    ? openSheet("task")
+                    : activeTab === "schedule"
+                      ? openSheet("schedule")
+                      : openSheet("meeting")
                 }
                 className="rounded-2xl bg-brand px-4 py-3 text-[13px] font-semibold text-white shadow-brand"
               >
-                빠른 추가
+                {activeTab === "files" ? "회의 만들기" : "빠른 추가"}
               </button>
             </div>
           </div>
@@ -2479,7 +2557,12 @@ export function CarryMateApp({
               onAddSchedule={() => openSheet("schedule")}
               onCreateMeeting={(preset) =>
                 openSheet("meeting", {
-                  meetingPreset: preset ?? null,
+                  meetingPreset: preset
+                    ? {
+                        ...preset,
+                        agenda: "",
+                      }
+                    : null,
                 })
               }
               onConfirmSlot={handleConfirmSlot}
@@ -2499,7 +2582,6 @@ export function CarryMateApp({
             <FileTab
               files={files}
               members={members}
-              onUpload={() => openSheet("file")}
               onMarkFinal={handleMarkFinal}
             />
           )}
@@ -2527,9 +2609,12 @@ export function CarryMateApp({
           isDemo={!hasPersistentProjectId}
           meeting={activeMeeting}
           members={members}
+          tasks={tasks}
+          meetings={confirmedMeetings}
           onClose={() => setActiveMeetingId(null)}
           onImportActionItems={handleImportMeetingActionItems}
           onMeetingUpdated={handleMeetingUpdated}
+          projectEndDate={project.endDate}
           projectId={project.id}
         />
       ) : null}
@@ -3342,17 +3427,20 @@ function MeetingCreateSheet({
     title: string;
     startsAt: string;
     endsAt: string;
+    agenda: string;
   } | null;
   onClose: () => void;
   onSubmit: (input: {
     title: string;
     startsAt: string;
     endsAt: string;
+    agenda: string;
   }) => Promise<boolean>;
 }) {
   const [title, setTitle] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  const [agenda, setAgenda] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -3360,6 +3448,7 @@ function MeetingCreateSheet({
     setTitle(initialValues?.title ?? "");
     setStartsAt(initialValues?.startsAt ?? "");
     setEndsAt(initialValues?.endsAt ?? "");
+    setAgenda(initialValues?.agenda ?? "");
     setMessage("");
   }, [initialValues]);
 
@@ -3389,6 +3478,13 @@ function MeetingCreateSheet({
           onChange={setEndsAt}
           placeholder=""
         />
+        <SheetTextarea
+          label="안건 (선택)"
+          value={agenda}
+          onChange={setAgenda}
+          placeholder="예: 발표 순서 확정, 역할 점검, 최종 수정 사항 정리"
+          rows={3}
+        />
       </div>
       {message ? (
         <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
@@ -3414,63 +3510,13 @@ function MeetingCreateSheet({
 
           setMessage("");
           setIsSubmitting(true);
-          const ok = await onSubmit({ title, startsAt, endsAt });
+          const ok = await onSubmit({ title, startsAt, endsAt, agenda });
           if (!ok) {
             setMessage("회의 생성에 실패했습니다. Supabase 정책과 환경변수를 확인해 주세요.");
           }
           setIsSubmitting(false);
         }}
       />
-    </SheetShell>
-  );
-}
-
-function UploadSheet({
-  onClose,
-  onUpload,
-}: {
-  onClose: () => void;
-  onUpload: (category: FileCategory) => void;
-}) {
-  const categories: { id: FileCategory; title: string; description: string }[] = [
-    {
-      id: "minutes",
-      title: "회의록",
-      description: "오늘 논의 내용을 바로 추가합니다.",
-    },
-    {
-      id: "materials",
-      title: "과제 자료",
-      description: "발표 자료나 산출물을 추가합니다.",
-    },
-    {
-      id: "links",
-      title: "참고 링크",
-      description: "조사 링크나 레퍼런스를 정리합니다.",
-    },
-  ];
-
-  return (
-    <SheetShell title="파일 더미 업로드" onClose={onClose}>
-      <p className="text-sm leading-6 text-muted">
-        발표 시연용으로 선택한 카테고리에 새 파일이 바로 추가됩니다.
-      </p>
-      <div className="mt-4 space-y-3">
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            type="button"
-            onClick={() => onUpload(category.id)}
-            className="flex w-full items-start justify-between rounded-2xl border border-line bg-white px-4 py-4 text-left shadow-soft transition hover:border-brand"
-          >
-            <div>
-              <p className="font-semibold text-ink">{category.title}</p>
-              <p className="mt-1 text-sm text-muted">{category.description}</p>
-            </div>
-            <span className="text-lg text-brand">+</span>
-          </button>
-        ))}
-      </div>
     </SheetShell>
   );
 }
@@ -3525,6 +3571,33 @@ function SheetInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         className="w-full rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
+      />
+    </label>
+  );
+}
+
+function SheetTextarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[13px] font-semibold text-ink">{label}</span>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className="w-full resize-none rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
       />
     </label>
   );
