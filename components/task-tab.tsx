@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Task, TeamMember } from "@/types/carrymate";
 
 const columns = [
@@ -54,10 +55,10 @@ export function TaskTab({
       <section className="rounded-[26px] border border-[#eeeaf8] bg-white p-5 shadow-[0_10px_30px_rgba(80,63,155,0.08)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-[19px] font-extrabold text-[#282438]">
+            <h2 className="text-[19px] font-extrabold text-[#282438] sm:text-[22px] lg:text-[26px] break-keep">
               팀 기여도
             </h2>
-            <p className="mt-2 max-w-[240px] text-[12px] leading-5 text-[#8d879b]">
+            <p className="mt-2 max-w-[240px] text-[12px] leading-5 text-[#8d879b] sm:text-sm break-keep">
               이번 주 프로젝트 달성도를 기준으로 팀 흐름을 분석했어요.
             </p>
           </div>
@@ -68,6 +69,7 @@ export function TaskTab({
                 key={member.id}
                 name={member.name}
                 index={index}
+                avatarUrl={resolveMemberAvatarUrl(member)}
               />
             ))}
 
@@ -156,6 +158,7 @@ export function TaskTab({
                     name={member.name}
                     index={index}
                     large
+                    avatarUrl={resolveMemberAvatarUrl(member)}
                   />
 
                   <div className="min-w-0 flex-1">
@@ -208,7 +211,7 @@ export function TaskTab({
           <section key={column.id}>
             <div className="mb-3 flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-[15px] font-extrabold text-[#2d293b]">
+                <h3 className="text-[15px] font-extrabold text-[#2d293b] sm:text-base lg:text-lg">
                   {column.label}
                 </h3>
 
@@ -256,12 +259,12 @@ export function TaskTab({
                           </span>
                         </div>
 
-                        <h4 className="mt-3 text-[14px] font-extrabold leading-6 text-[#343044]">
+                        <h4 className="mt-3 line-clamp-2 break-words text-[14px] font-extrabold leading-6 text-[#343044] sm:text-[15px]">
                           {task.title}
                         </h4>
 
                         {task.aiSuggestedRole ? (
-                          <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-[#8e879a]">
+                          <p className="mt-2 line-clamp-2 break-words text-[11px] leading-5 text-[#8e879a] sm:text-xs">
                             {task.aiSuggestedRole}
                           </p>
                         ) : null}
@@ -341,7 +344,11 @@ export function TaskTab({
                 key={member.id}
                 className="flex items-center gap-3 rounded-[20px] border border-dashed border-[#ddd8e9] bg-white px-4 py-4 opacity-70"
               >
-                <MemberAvatar name={member.name} index={0} />
+                <MemberAvatar
+                  name={member.name}
+                  index={0}
+                  avatarUrl={resolveMemberAvatarUrl(member)}
+                />
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-bold text-[#514b5e]">
@@ -413,11 +420,13 @@ function MemberAvatar({
   index,
   large = false,
   small = false,
+  avatarUrl,
 }: {
   name: string;
   index: number;
   large?: boolean;
   small?: boolean;
+  avatarUrl?: string | null;
 }) {
   const backgroundClasses = [
     "bg-[#f8d9c0] text-[#6f4e37]",
@@ -432,14 +441,61 @@ function MemberAvatar({
       ? "h-6 w-6 text-[8px]"
       : "h-9 w-9 text-[10px]";
 
+  const hasAvatar = Boolean(avatarUrl);
+
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-full border-2 border-white font-extrabold ${sizeClass} ${
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white font-extrabold ${sizeClass} ${
         backgroundClasses[index % backgroundClasses.length]
       }`}
     >
-      {name.slice(0, 1)}
+      {hasAvatar ? (
+        <Image
+          src={avatarUrl ?? ""}
+          alt={`${name} 프로필 이미지`}
+          fill
+          sizes={sizeClass.includes("w-11") ? "44px" : sizeClass.includes("w-6") ? "24px" : "36px"}
+          className="object-cover"
+        />
+      ) : (
+        <UserAvatarIcon />
+      )}
     </span>
+  );
+}
+
+function UserAvatarIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5 text-current"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 21a8 8 0 0 0-16 0" />
+      <circle cx="12" cy="8" r="4" />
+    </svg>
+  );
+}
+
+function resolveMemberAvatarUrl(member: TeamMember) {
+  const extendedMember = member as TeamMember & {
+    avatarUrl?: string | null;
+    profileImageUrl?: string | null;
+    imageUrl?: string | null;
+    photoUrl?: string | null;
+  };
+
+  return (
+    extendedMember.avatarUrl ??
+    extendedMember.profileImageUrl ??
+    extendedMember.imageUrl ??
+    extendedMember.photoUrl ??
+    null
   );
 }
 

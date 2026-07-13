@@ -467,8 +467,8 @@ export function ScheduleTab({
       <section className="rounded-[26px] border-l-4 border-[#6259e8] bg-white p-5 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold text-[#7b74ee]">이번 주 회의 관리</p>
-            <h2 className="mt-2 text-[23px] font-extrabold leading-7 text-[#262236]">
+            <p className="text-[11px] font-bold text-[#7b74ee] sm:text-xs">이번 주 회의 관리</p>
+            <h2 className="mt-2 text-[23px] font-extrabold leading-7 text-[#262236] sm:text-[26px] lg:text-[30px] break-keep">
               일정과 회의를 한 곳에서 정리
             </h2>
           </div>
@@ -481,13 +481,13 @@ export function ScheduleTab({
             </button>
             <button
               onClick={onAddSchedule}
-              className="rounded-full border border-[#dcd6ff] bg-white px-3 py-2 text-[11px] font-bold text-[#6259e8]"
+              className="rounded-full border border-[#dcd6ff] bg-white px-3 py-2 text-[11px] font-bold text-[#6259e8] sm:text-xs"
             >
               + 일정
             </button>
           </div>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <MiniStat label="전체 일정" value={`${slots.length + meetings.length}개`} />
           <MiniStat label="참여 인원" value={`${activeMembers.length}명`} />
         </div>
@@ -496,13 +496,13 @@ export function ScheduleTab({
       <section className="rounded-[26px] border border-[#eeeaf7] bg-white p-4 shadow-card">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-bold text-[#7b74ee]">팀 공강 입력</p>
-            <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b]">
+            <p className="text-[11px] font-bold text-[#7b74ee] sm:text-xs">팀 공강 입력</p>
+            <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b] sm:text-xl lg:text-2xl break-keep">
               {editableMember
                 ? `${editableMember.name}의 공강 시간`
                 : "공강 시간을 입력하려면 팀원 연결이 필요합니다."}
             </h3>
-            <p className="mt-2 text-[11px] leading-5 text-[#938ca1]">
+            <p className="mt-2 text-[11px] leading-5 text-[#938ca1] sm:text-xs lg:text-sm break-keep">
               시작 교시와 마지막 교시를 선택하면 사이 시간도 함께 선택됩니다.
             </p>
           </div>
@@ -638,11 +638,11 @@ export function ScheduleTab({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-bold text-[#7b74ee]">추천 {index + 1}</p>
-                    <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b]">
+                    <p className="text-[11px] font-bold text-[#7b74ee] sm:text-xs">추천 {index + 1}</p>
+                    <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b] sm:text-xl lg:text-2xl break-keep">
                       {slot.dateLabel}
                     </h3>
-                    <p className="mt-1 text-[13px] font-semibold text-[#6259e8]">
+                    <p className="mt-1 text-[13px] font-semibold text-[#6259e8] sm:text-sm break-keep">
                       {getPeriodLabelFromRange(slot.timeRange)}
                     </p>
                   </div>
@@ -651,7 +651,7 @@ export function ScheduleTab({
                   </span>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <InfoTile label="가능 인원" value={`${availableNames.length} / ${activeMembers.length}명`} />
                   <InfoTile
                     label="추천 이유"
@@ -664,7 +664,7 @@ export function ScheduleTab({
                 </div>
 
                 <div className="mt-4 rounded-2xl bg-[#faf9ff] px-4 py-3">
-                  <p className="text-[11px] font-bold text-[#6259e8]">가능 인원</p>
+                  <p className="text-[11px] font-bold text-[#6259e8] sm:text-xs">가능 인원</p>
                   <p className="mt-2 text-[12px] leading-6 text-[#5d5768]">
                     {availableNames.length > 0 ? availableNames.join(" · ") : "가능 인원 정보 없음"}
                   </p>
@@ -674,7 +674,7 @@ export function ScheduleTab({
                   <button
                     type="button"
                     onClick={() => onConfirmSlot(slot.id)}
-                    className="flex-1 rounded-2xl border border-[#dcd6ff] bg-white px-4 py-3 text-[11px] font-bold text-[#6259e8]"
+                    className="flex-1 rounded-2xl border border-[#dcd6ff] bg-white px-4 py-3 text-[11px] font-bold text-[#6259e8] sm:text-xs"
                   >
                     추천 확정
                   </button>
@@ -716,7 +716,7 @@ export function ScheduleTab({
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-[13px] font-extrabold text-[#332f42]">
+                      <p className="line-clamp-2 break-words text-[13px] font-extrabold text-[#332f42] sm:text-sm lg:text-base">
                         {meeting.title}
                       </p>
                       <span
@@ -725,7 +725,7 @@ export function ScheduleTab({
                         {statusMeta.label}
                       </span>
                     </div>
-                    <p className="mt-1 text-[11px] text-[#958fa1]">
+                    <p className="mt-1 whitespace-nowrap text-[11px] text-[#958fa1] sm:text-xs">
                       {meeting.dateLabel} · {meeting.timeRange}
                     </p>
                   </div>
@@ -776,7 +776,7 @@ export function ScheduleTab({
 
                 <button
                   onClick={() => onOpenMeeting(meeting.id)}
-                  className="mt-4 w-full rounded-xl border border-[#dcd6ff] bg-white py-2.5 text-[11px] font-bold text-[#6259e8]"
+                  className="mt-4 w-full rounded-xl border border-[#dcd6ff] bg-white py-2.5 text-[11px] font-bold text-[#6259e8] sm:text-xs"
                 >
                   회의 채팅 열기
                 </button>
@@ -981,7 +981,7 @@ function StatCard({
 }) {
   return (
     <section className="rounded-[22px] border border-[#eeeaf7] bg-white p-4 shadow-card">
-      <p className="text-[11px] font-bold text-[#7b74ee]">{title}</p>
+      <p className="text-[11px] font-bold text-[#7b74ee] sm:text-xs">{title}</p>
       <div className="mt-3 space-y-3">
         {rows.map((row) => (
           <div key={row.label} className="rounded-2xl bg-[#faf9ff] px-3 py-3">
@@ -1020,7 +1020,7 @@ function SectionTitle({
     <div className="flex items-center justify-between px-1">
       <h3 className="text-[16px] font-extrabold text-[#282438]">{title}</h3>
       {action ? (
-        <button onClick={onClick} className="text-[11px] font-bold text-[#6259e8]">
+        <button onClick={onClick} className="text-[11px] font-bold text-[#6259e8] sm:text-xs">
           {action}
         </button>
       ) : null}

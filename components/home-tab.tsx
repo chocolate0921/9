@@ -77,7 +77,7 @@ export function HomeTab({
     <div className="space-y-4 pb-4">
       {/* 전체 진행률 */}
       <section className="rounded-[28px] border border-[#eeeaf8] bg-white px-5 py-7 shadow-[0_10px_30px_rgba(80,63,155,0.08)]">
-        <p className="text-center text-[12px] font-semibold text-[#77718a]">
+        <p className="text-center text-[12px] font-semibold text-[#77718a] sm:text-sm lg:text-base">
           오늘의 진행률
         </p>
 
@@ -102,7 +102,7 @@ export function HomeTab({
           </button>
         </div>
 
-        <h2 className="mt-5 text-[21px] font-bold leading-8">
+          <h2 className="mt-5 text-[21px] font-bold leading-8 sm:text-[24px] lg:text-[30px]">
           {summary.urgentTask?.title ?? "오늘의 핵심 업무를 확인해 주세요"}
         </h2>
 
@@ -138,7 +138,7 @@ export function HomeTab({
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-[13px] font-bold text-[#4f46d8]">
+              <h3 className="text-[13px] font-bold text-[#4f46d8] sm:text-base lg:text-lg">
                 AI 브리핑
               </h3>
 
@@ -152,7 +152,7 @@ export function HomeTab({
               </button>
             </div>
 
-            <p className="mt-2 text-[13px] leading-6 text-[#625d70]">
+            <p className="mt-2 break-keep text-[13px] leading-6 text-[#625d70] sm:text-sm lg:text-base">
               {analysisState.summary}
             </p>
           </div>
@@ -183,7 +183,7 @@ export function HomeTab({
       {/* 오늘 할 일 */}
       <section>
         <div className="mb-3 flex items-center justify-between px-1">
-          <h3 className="text-[16px] font-bold text-[#252236]">
+          <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
             오늘의 할 일
           </h3>
 
@@ -218,11 +218,11 @@ export function HomeTab({
                 </span>
 
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-bold text-[#343044]">
+                  <p className="line-clamp-2 break-words text-[13px] font-bold text-[#343044] sm:text-sm lg:text-base">
                     {task.title}
                   </p>
 
-                  <p className="mt-1 text-[11px] text-[#9993a7]">
+                  <p className="mt-1 whitespace-nowrap text-[11px] text-[#9993a7] sm:text-xs">
                     {task.status === "inProgress" ? "진행 중" : "오늘 마감"}
                   </p>
                 </div>
@@ -238,7 +238,7 @@ export function HomeTab({
       {todayMeetings.length > 0 && (
         <section>
           <div className="mb-3 flex items-center justify-between px-1">
-            <h3 className="text-[16px] font-bold text-[#252236]">
+          <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
               오늘의 일정
             </h3>
 
@@ -261,11 +261,11 @@ export function HomeTab({
 
       {/* 진행 중인 프로젝트 */}
       <section>
-        <h3 className="mb-3 px-1 text-[16px] font-bold text-[#252236]">
+        <h3 className="mb-3 px-1 text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
           진행 중인 프로젝트
         </h3>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <QuickMenu
             icon="♧"
             title="프로젝트 현황"
@@ -287,12 +287,6 @@ export function HomeTab({
             onClick={onJumpToSchedule}
           />
 
-          <QuickMenu
-            icon="+"
-            title="새 업무"
-            description="업무 추가하기"
-            onClick={onJumpToTasks}
-          />
         </div>
       </section>
     </div>
@@ -404,10 +398,10 @@ function MeetingRow({ meeting }: { meeting: ConfirmedMeeting }) {
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-bold text-[#343044]">
+        <p className="line-clamp-2 break-words text-[13px] font-bold text-[#343044] sm:text-sm lg:text-base">
           {meeting.title}
         </p>
-        <p className="mt-1 text-[11px] text-[#9993a7]">
+        <p className="mt-1 whitespace-nowrap text-[11px] text-[#9993a7] sm:text-xs">
           {meeting.dateLabel} · {meeting.timeRange}
         </p>
       </div>
@@ -432,14 +426,20 @@ function QuickMenu({
     <button
       type="button"
       onClick={onClick}
-      className="min-h-28 rounded-[22px] border border-[#eeeaf7] bg-white p-4 text-left shadow-[0_8px_24px_rgba(64,52,115,0.08)] transition active:scale-[0.98]"
+      className="flex min-h-28 items-center gap-3 rounded-[22px] border border-[#eeeaf7] bg-white p-4 text-left shadow-[0_8px_24px_rgba(64,52,115,0.08)] transition active:scale-[0.98] sm:p-5"
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f1efff] text-[17px] font-bold text-[#6259e8]">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f1efff] text-[17px] font-bold text-[#6259e8]">
         {icon}
       </span>
 
-      <p className="mt-4 text-[13px] font-bold text-[#322e40]">{title}</p>
-      <p className="mt-1 text-[10px] text-[#9a94a8]">{description}</p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-bold text-[#322e40] sm:text-sm lg:text-base">
+          {title}
+        </p>
+        <p className="mt-1 break-keep text-[10px] text-[#9a94a8] sm:text-xs lg:text-sm">
+          {description}
+        </p>
+      </div>
     </button>
   );
 }

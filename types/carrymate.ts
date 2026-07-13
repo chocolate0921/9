@@ -3,7 +3,14 @@ export type TabId = "home" | "tasks" | "schedule" | "files";
 export type HealthStatus = "safe" | "warning" | "risk";
 export type TaskStatus = "todo" | "inProgress" | "done";
 export type TaskPriority = "high" | "medium" | "low";
-export type FileCategory = "minutes" | "materials" | "links";
+export type FileCategory =
+  | "minutes"
+  | "presentation"
+  | "reference"
+  | "references"
+  | "materials"
+  | "links"
+  | "other";
 export type MeetingStatus = "scheduled" | "inProgress" | "ended";
 
 export type Project = {
@@ -118,6 +125,17 @@ export type FileItem = {
   uploadedBy: string;
   uploadedByMemberId?: string | null;
   uploadedAt: string;
-  statusLabel: "초안" | "검토중" | "최종본";
+  statusLabel: string;
   isFinal: boolean;
+  source?: "demo" | "storage";
+  sharedFileId?: string | null;
+  latestVersionId?: string | null;
+  fileVersionId?: string | null;
+  storagePath?: string | null;
+  mimeType?: string | null;
+  fileSizeBytes?: number | null;
+  originalFileName?: string | null;
+  resourceType?: "file" | "link";
+  resourceUrl?: string | null;
+  note?: string | null;
 };

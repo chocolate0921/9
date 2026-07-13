@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
+import { ModalShell } from "@/components/modal-shell";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
 import { MeetingRoomSheet } from "@/components/meeting-room-sheet";
@@ -20,6 +21,7 @@ import {
   mapTaskRowsToTasks,
   mapTeamMemberRowsToTeamMembers,
 } from "@/lib/mappers/carrymate";
+import { mapTeamFileRecordsToFileItems } from "@/lib/mappers/files";
 import { formatDeadlineLabel } from "@/lib/carrymate/project-dates";
 import {
   createMeeting,
@@ -27,6 +29,14 @@ import {
   getMeetingsByTeam,
   getMeetingNotesByTeam,
 } from "@/lib/supabase/meetings";
+import {
+  getTeamFileSignedUrl,
+  getTeamFiles,
+  createTeamLinkResource,
+  updateTeamResource,
+  deleteTeamResource,
+  uploadTeamFile,
+} from "@/lib/supabase/files";
 import { serializeMeetingNoteContent } from "@/lib/carrymate/meeting-note-content";
 import {
   getAvailabilityByTeam,
@@ -47,6 +57,7 @@ import {
   getTeamMembersByTeam,
   getTeamsForProfile,
   getUnlinkedTeamMembersByTeam,
+  deleteTeamMember,
   type ProfileTeamSummary,
   type CreateTeamMemberSeed,
   type TeamMemberRow,
@@ -304,8 +315,16 @@ export function CarryMateApp({
   const [taskSyncMessage, setTaskSyncMessage] = useState("");
   const [memberSyncMessage, setMemberSyncMessage] = useState("");
   const [meetingSyncMessage, setMeetingSyncMessage] = useState("");
+  const [fileSyncMessage, setFileSyncMessage] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [memberLinkMessage, setMemberLinkMessage] = useState("");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [fileCreateDialogRequestId, setFileCreateDialogRequestId] = useState(0);
+  const [pendingTeamAction, setPendingTeamAction] = useState<
+    | { kind: "leave"; summary: ProfileTeamSummary }
+    | { kind: "delete"; summary: ProfileTeamSummary }
+    | null
+  >(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isMemberLinkLoading, setIsMemberLinkLoading] = useState(false);
@@ -321,6 +340,8 @@ export function CarryMateApp({
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
   const tasksRef = useRef(tasks);
   const membersRef = useRef(members);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const firstMenuItemRef = useRef<HTMLButtonElement | null>(null);
   const handledInviteCodeRef = useRef("");
 
   // TODO: Supabase 연동 시 아래 UI 상태들은 서버 저장 대상이 아니라
@@ -373,6 +394,10 @@ export function CarryMateApp({
   const isAuthenticated = Boolean(authenticatedUser);
   const isTeamMember = Boolean(currentMember);
   const isTeamLeader = Boolean(currentMember?.isLeader);
+  const currentTeamSummary = useMemo(
+    () => myTeams.find((summary) => summary.team.id === project.id) ?? null,
+    [myTeams, project.id],
+  );
   const userNickname = getUserNickname(authenticatedUser ?? user);
   const inviteCode = project.inviteCode || (!hasPersistentProjectId ? DEMO_INVITE_CODE : "");
   const inviteLink = inviteCode ? buildInviteLink(inviteCode) : "";
@@ -422,6 +447,40 @@ export function CarryMateApp({
   useEffect(() => {
     membersRef.current = members;
   }, [members]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    if (!isMenuOpen) {
+      document.body.style.overflow = "";
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const menuButtonElement = menuButtonRef.current;
+    document.body.style.overflow = "hidden";
+
+    const focusTarget = window.setTimeout(() => {
+      firstMenuItemRef.current?.focus();
+    }, 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.clearTimeout(focusTarget);
+      document.body.style.overflow = previousOverflow;
+      menuButtonElement?.focus();
+    };
+  }, [isMenuOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1052,6 +1111,7 @@ export function CarryMateApp({
     setTaskSyncMessage("");
     setMemberSyncMessage("");
     setMeetingSyncMessage("");
+    setFileSyncMessage("");
     setMemberLinkMessage("");
     setIsInviteModalOpen(false);
     setIsMemberLinkSheetOpen(false);
@@ -1079,13 +1139,14 @@ export function CarryMateApp({
     setMemberSyncMessage("실제 팀원 정보를 불러오는 중입니다.");
     setMeetingSyncMessage("실제 팀 회의를 불러오는 중입니다.");
 
-    const [teamResult, teamMembersResult, tasksResult, meetingsResult, notesResult] =
+    const [teamResult, teamMembersResult, tasksResult, meetingsResult, notesResult, filesResult] =
       await Promise.all([
         getTeamById(options.teamId),
         getTeamMembersByTeam(options.teamId),
         getTasksByTeam(options.teamId),
         getMeetingsByTeam(options.teamId),
         getMeetingNotesByTeam(options.teamId),
+        getTeamFiles(options.teamId),
       ]);
 
     if (!teamResult.ok || !teamResult.data) {
@@ -1159,7 +1220,11 @@ export function CarryMateApp({
         : [];
     setConfirmedMeetings(mergeMeetingsWithNotes(mappedMeetings, mappedNotes));
     setScheduleSlots([]);
-    setFiles([]);
+    setFiles(
+      filesResult.ok && filesResult.data
+        ? mapTeamFileRecordsToFileItems(filesResult.data, mappedMembers)
+        : [],
+    );
     setCurrentMember(
       currentMemberRow ? mapTeamMemberRowsToTeamMembers([currentMemberRow])[0] : null,
     );
@@ -1182,6 +1247,10 @@ export function CarryMateApp({
           : notesResult.message
         : meetingsResult.message,
     );
+    setFileSyncMessage(filesResult.ok ? "" : filesResult.message);
+    if (!filesResult.ok) {
+      console.error(filesResult.message);
+    }
     setWorkspaceLoadMessage("");
     setIsWorkspaceLoading(false);
     setIsRestoringWorkspace(false);
@@ -1220,6 +1289,26 @@ export function CarryMateApp({
   const openInviteModal = () => {
     setCopyFeedback("");
     setIsInviteModalOpen(true);
+  };
+
+  const openFileCreateDialog = () => {
+    setFileCreateDialogRequestId((current) => current + 1);
+  };
+
+  const closeWorkspaceMenu = () => {
+    setIsMenuOpen(false);
+  };
+
+  const requestTeamAction = (
+    kind: "leave" | "delete",
+    summary: ProfileTeamSummary | null,
+  ) => {
+    if (!summary) {
+      return;
+    }
+
+    closeWorkspaceMenu();
+    setPendingTeamAction({ kind, summary });
   };
 
   const handleCopyInviteInfo = async () => {
@@ -1558,6 +1647,7 @@ export function CarryMateApp({
     setScheduleSlots([]);
     setConfirmedMeetings([]);
     setFiles([]);
+    setFileSyncMessage("");
     setActiveTab("home");
     setViewMode("onboarding");
     setOnboardingSheetMode("shareInvite");
@@ -1908,26 +1998,275 @@ export function CarryMateApp({
     })();
   };
 
-  const handleMarkFinal = (fileId: string) => {
-    // 최종본은 하나만 유지되어야 하므로
-    // materials 카테고리 안에서 기존 최종본을 해제하고 새 파일을 지정한다.
-    setFiles((current) =>
-      current.map((file) => {
-        if (file.category !== "materials") {
-          return file;
-        }
+  const reloadTeamFiles = async (successMessage?: string) => {
+    const reloadResult = await getTeamFiles(project.id);
+    if (reloadResult.ok && reloadResult.data) {
+      setFiles(mapTeamFileRecordsToFileItems(reloadResult.data, membersRef.current));
+      setFileSyncMessage(successMessage ?? "");
+      return true;
+    }
 
-        if (file.id === fileId) {
-          return { ...file, isFinal: true, statusLabel: "최종본" };
-        }
+    if (!reloadResult.ok) {
+      setFileSyncMessage(reloadResult.message);
+    }
 
-        if (file.isFinal) {
-          return { ...file, isFinal: false, statusLabel: "검토중" };
-        }
+    return false;
+  };
 
-        return file;
-      }),
+  const handleUploadTeamFile = async (
+    file: File,
+    category: FileItem["category"],
+    onProgress: (percent: number) => void,
+  ) => {
+    if (!hasPersistentProjectId || !currentMember) {
+      return {
+        ok: false,
+        message: "실제 UUID 팀에서만 파일 업로드를 사용할 수 있습니다.",
+      };
+    }
+
+    const result = await uploadTeamFile(
+      {
+        teamId: project.id,
+        uploadedBy: currentMember.id,
+        file,
+        category,
+      },
+      onProgress,
     );
+
+    if (!result.ok) {
+      return result;
+    }
+
+    await reloadTeamFiles(`${file.name} 업로드가 완료되었습니다.`);
+
+    return {
+      ok: true,
+      message: `${file.name} 업로드가 완료되었습니다.`,
+    };
+  };
+
+  const handleCreateLinkResource = async (input: {
+    title: string;
+    url: string;
+    category: FileItem["category"];
+    note?: string;
+  }) => {
+    if (!hasPersistentProjectId || !currentMember) {
+      return {
+        ok: false,
+        message: "실제 UUID 팀에서만 링크 등록을 사용할 수 있습니다.",
+      };
+    }
+
+    const result = await createTeamLinkResource({
+      teamId: project.id,
+      uploadedBy: currentMember.id,
+      title: input.title,
+      url: input.url,
+      category: input.category,
+      note: input.note,
+    });
+
+    if (!result.ok) {
+      return result;
+    }
+
+    await reloadTeamFiles("링크가 등록되었습니다.");
+
+    return {
+      ok: true,
+      message: "링크가 등록되었습니다.",
+    };
+  };
+
+  const handleUpdateResource = async (
+    file: FileItem,
+    input: {
+      title: string;
+      category: FileItem["category"];
+      url?: string;
+      note?: string;
+    },
+  ) => {
+    if (!hasPersistentProjectId || !currentMember) {
+      return {
+        ok: false,
+        message: "실제 UUID 팀에서만 자료를 수정할 수 있습니다.",
+      };
+    }
+
+    if (!file.sharedFileId) {
+      return {
+        ok: false,
+        message: "수정할 자료 정보를 찾을 수 없습니다.",
+      };
+    }
+
+    const result = await updateTeamResource(file.sharedFileId, {
+      title: input.title,
+      category: input.category,
+      url: input.url,
+      note: input.note,
+    });
+
+    if (!result.ok) {
+      return result;
+    }
+
+    await reloadTeamFiles("자료가 수정되었습니다.");
+
+    return {
+      ok: true,
+      message: "자료가 수정되었습니다.",
+    };
+  };
+
+  const handleDeleteResource = async (file: FileItem) => {
+    if (!hasPersistentProjectId || !currentMember) {
+      return {
+        ok: false,
+        message: "실제 UUID 팀에서만 자료를 삭제할 수 있습니다.",
+      };
+    }
+
+    if (!file.sharedFileId) {
+      return {
+        ok: false,
+        message: "삭제할 자료 정보를 찾을 수 없습니다.",
+      };
+    }
+
+    const result = await deleteTeamResource(file.sharedFileId);
+    if (!result.ok) {
+      return result;
+    }
+
+    await reloadTeamFiles("자료가 삭제되었습니다.");
+
+    return {
+      ok: true,
+      message: "자료가 삭제되었습니다.",
+    };
+  };
+
+  const handleDownloadTeamFile = async (file: FileItem) => {
+    if (!hasPersistentProjectId || !file.storagePath || file.resourceType === "link") {
+      return {
+        ok: false,
+        message: "파일 다운로드만 지원됩니다.",
+      };
+    }
+
+    const result = await getTeamFileSignedUrl(file.storagePath);
+    if (!result.ok || !result.data) {
+      return result;
+    }
+
+    if (typeof window !== "undefined") {
+      window.open(result.data, "_blank", "noopener,noreferrer");
+    }
+
+    return {
+      ok: true,
+      message: "다운로드 링크를 열었습니다.",
+    };
+  };
+
+  const handleOpenTeamLink = async (file: FileItem) => {
+    const url = file.resourceUrl ?? file.storagePath ?? "";
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return {
+        ok: false,
+        message: "열 수 있는 링크가 없습니다.",
+      };
+    }
+
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    return {
+      ok: true,
+      message: "링크를 새 탭에서 열었습니다.",
+    };
+  };
+
+  const removeLastVisitedTeamId = (teamId: string) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (window.localStorage.getItem(LAST_TEAM_ID_STORAGE_KEY) === teamId) {
+      window.localStorage.removeItem(LAST_TEAM_ID_STORAGE_KEY);
+    }
+  };
+
+  const handleLeaveTeam = async (summary: ProfileTeamSummary) => {
+    const result = await deleteTeamMember(summary.member.id);
+    if (!result.ok) {
+      return result;
+    }
+
+    setMyTeams((current) => current.filter((item) => item.member.id !== summary.member.id));
+    setMyTeamsMessage("팀에서 나갔습니다.");
+    removeLastVisitedTeamId(summary.team.id);
+    if (project.id === summary.team.id) {
+      setCurrentMember(null);
+      setViewMode("onboarding");
+      setActiveTab("home");
+    }
+
+    return {
+      ok: true,
+      message: "팀에서 나갔습니다.",
+    };
+  };
+
+  const handleDeleteTeam = async (summary: ProfileTeamSummary) => {
+    if (!session?.access_token) {
+      return {
+        ok: false,
+        message: "로그인 세션을 확인할 수 없습니다.",
+      };
+    }
+
+    const response = await fetch(`/api/teams/${encodeURIComponent(summary.team.id)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      let message = "팀 삭제에 실패했습니다.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        message = payload.error ?? message;
+      } catch {
+        // keep fallback message
+      }
+
+      return {
+        ok: false,
+        message,
+      };
+    }
+
+    setMyTeams((current) => current.filter((item) => item.team.id !== summary.team.id));
+    setMyTeamsMessage("팀이 삭제되었습니다.");
+    removeLastVisitedTeamId(summary.team.id);
+    if (project.id === summary.team.id) {
+      setCurrentMember(null);
+      setViewMode("onboarding");
+      setActiveTab("home");
+    }
+
+    return {
+      ok: true,
+      message: "팀이 삭제되었습니다.",
+    };
   };
 
   const handleMeetingUpdated = (updatedMeeting: ConfirmedMeeting) => {
@@ -2359,7 +2698,7 @@ export function CarryMateApp({
           <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.02em] text-ink">
             마지막 팀을 확인하는 중입니다
           </h1>
-          <p className="mt-2 text-sm leading-6 text-muted">
+          <p className="mt-2 text-sm leading-6 text-muted sm:text-base break-keep">
             로그인 계정과 저장된 팀 정보를 대조한 뒤 워크스페이스를 복원합니다.
           </p>
         </div>
@@ -2401,6 +2740,8 @@ export function CarryMateApp({
               memberRow: summary.member,
             });
           }}
+          onLeaveTeam={handleLeaveTeam}
+          onDeleteTeam={handleDeleteTeam}
         />
         {renderOnboardingSheet()}
         {renderAuthSheet()}
@@ -2410,95 +2751,112 @@ export function CarryMateApp({
 
   return (
     <>
-      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-28 pt-7">
-        <div className="mb-5 rounded-[2rem] border border-line bg-white/92 p-5 shadow-soft backdrop-blur">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand">
-            CarryMate
-          </p>
-          <div className="mt-2 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[25px] font-semibold tracking-[-0.02em] text-ink">{project.name}</h1>
-              <p className="mt-1 text-[13px] text-muted">
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 pb-[calc(env(safe-area-inset-bottom)+5rem)] pt-3 sm:px-4 lg:px-6">
+        <header className="mb-4 rounded-[2rem] border border-line bg-white/92 p-4 shadow-soft backdrop-blur">
+          <div className="grid grid-cols-[auto,minmax(0,1fr),auto] items-start gap-3">
+            <button
+              ref={menuButtonRef}
+              type="button"
+              aria-label="메뉴 열기"
+              aria-expanded={isMenuOpen}
+              onClick={() => setIsMenuOpen((current) => !current)}
+              className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-lg font-semibold text-ink shadow-soft"
+            >
+              ☰
+            </button>
+
+            <div className="min-w-0 text-center">
+              <p className="truncate text-[11px] font-semibold uppercase tracking-[0.24em] text-brand sm:text-xs">
+                CarryMate
+              </p>
+              <h1 className="mt-1 truncate text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[25px] lg:text-[30px]">
+                {project.name}
+              </h1>
+              <p className="mt-1 truncate text-[12px] text-muted sm:text-[13px] lg:text-sm">
                 {project.courseName} · {project.deadlineLabel}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {authLoading ? (
-                  <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
-                    계정 확인 중
-                  </span>
-                ) : isAuthenticated ? (
-                  <>
-                    <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-brand">
-                      {userNickname || authenticatedUser?.email}
-                    </span>
-                    <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
-                      {isTeamLeader
-                        ? "팀장 연결됨"
-                        : isTeamMember
-                          ? "팀원 연결됨"
-                          : "팀원 연결 대기"}
-                    </span>
-                    {!isTeamMember && hasPersistentProjectId ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void openMemberLinkSheet();
-                        }}
-                        className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
-                      >
-                        내 팀원 정보 연결
-                      </button>
-                    ) : null}
-                  </>
+            </div>
+
+            <div className="flex min-w-0 flex-col items-end gap-2">
+              {isAuthenticated ? (
+                activeTab === "home" ? null : activeTab === "tasks" ? (
+                  <button
+                    type="button"
+                    onClick={() => openSheet("task")}
+                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    aria-label="업무 추가"
+                  >
+                    + 업무 추가
+                  </button>
+                ) : activeTab === "schedule" ? (
+                  <button
+                    type="button"
+                    onClick={() => openSheet("meeting")}
+                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    aria-label="회의 만들기"
+                  >
+                    + 회의 만들기
+                  </button>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => openAuthSheet("signIn")}
-                    className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+                    onClick={openFileCreateDialog}
+                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    aria-label="자료 추가"
                   >
-                    로그인 / 회원가입
+                    + 자료 추가
                   </button>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              {isAuthenticated ? (
+                )
+              ) : (
                 <button
                   type="button"
-                  onClick={handleSignOut}
-                  className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-muted"
+                  onClick={() => openAuthSheet("signIn")}
+                  className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
                 >
-                  로그아웃
+                  로그인
                 </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setViewMode("onboarding")}
-                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
-              >
-                팀 전환
-              </button>
-              <button
-                type="button"
-                onClick={openInviteModal}
-                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
-              >
-                팀원 초대
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  activeTab === "tasks"
-                    ? openSheet("task")
-                    : activeTab === "schedule"
-                      ? openSheet("schedule")
-                      : openSheet("meeting")
-                }
-                className="rounded-2xl bg-brand px-4 py-3 text-[13px] font-semibold text-white shadow-brand"
-              >
-                {activeTab === "files" ? "회의 만들기" : "빠른 추가"}
-              </button>
+              )}
             </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {authLoading ? (
+              <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
+                계정 확인 중
+              </span>
+            ) : isAuthenticated ? (
+              <>
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-brand">
+                  {userNickname || authenticatedUser?.email}
+                </span>
+                <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
+                  {isTeamLeader
+                    ? "팀장 연결됨"
+                    : isTeamMember
+                      ? "팀원 연결됨"
+                      : "팀원 연결 대기"}
+                </span>
+                {!isTeamMember && hasPersistentProjectId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void openMemberLinkSheet();
+                    }}
+                    className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+                  >
+                    내 팀원 정보 연결
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openAuthSheet("signIn")}
+                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+              >
+                로그인 / 회원가입
+              </button>
+            )}
           </div>
           {authMessage ? (
             <p className="mt-3 rounded-2xl bg-canvas px-4 py-3 text-[12px] font-medium text-muted">
@@ -2525,9 +2883,9 @@ export function CarryMateApp({
               {memberLinkMessage}
             </p>
           ) : null}
-        </div>
+        </header>
 
-        <section className="flex-1 space-y-4">
+        <section className="min-w-0 flex-1 space-y-4">
           {activeTab === "home" && (
             <HomeTab
               summary={summary}
@@ -2582,13 +2940,64 @@ export function CarryMateApp({
             <FileTab
               files={files}
               members={members}
-              onMarkFinal={handleMarkFinal}
+              canUpload={hasPersistentProjectId && Boolean(currentMember)}
+              createDialogRequestId={fileCreateDialogRequestId}
+              syncMessage={fileSyncMessage}
+              onUploadFile={handleUploadTeamFile}
+              onCreateLink={handleCreateLinkResource}
+              onUpdateResource={handleUpdateResource}
+              onDeleteResource={handleDeleteResource}
+              onDownloadFile={handleDownloadTeamFile}
+              onOpenLink={handleOpenTeamLink}
             />
           )}
         </section>
 
         <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
       </main>
+
+      <WorkspaceDrawer
+        isOpen={isMenuOpen && viewMode === "workspace"}
+        currentTeam={currentTeamSummary}
+        isLeader={isTeamLeader}
+        firstItemRef={firstMenuItemRef}
+        onClose={closeWorkspaceMenu}
+        onOpenInvite={() => {
+          closeWorkspaceMenu();
+          openInviteModal();
+        }}
+        onOpenProjectSettings={() => {
+          closeWorkspaceMenu();
+          setActiveTab("schedule");
+        }}
+        onOpenTeamList={() => {
+          closeWorkspaceMenu();
+          setViewMode("onboarding");
+        }}
+        onLogout={() => {
+          closeWorkspaceMenu();
+          void handleSignOut();
+        }}
+        onRequestLeave={() => requestTeamAction("leave", currentTeamSummary)}
+        onRequestDelete={() => requestTeamAction("delete", currentTeamSummary)}
+      />
+
+      {pendingTeamAction ? (
+        <WorkspaceTeamActionModal
+          action={pendingTeamAction.kind}
+          teamName={pendingTeamAction.summary.team.team_name}
+          onClose={() => setPendingTeamAction(null)}
+          onConfirm={async () => {
+            const result =
+              pendingTeamAction.kind === "leave"
+                ? await handleLeaveTeam(pendingTeamAction.summary)
+                : await handleDeleteTeam(pendingTeamAction.summary);
+            if (result.ok) {
+              setPendingTeamAction(null);
+            }
+          }}
+        />
+      ) : null}
 
       {renderWorkspaceSheet()}
       {isInviteModalOpen ? (
@@ -2690,7 +3099,7 @@ function OnboardingScreen({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[12px] font-semibold text-brand">선택 로그인</p>
-                <p className="mt-1 text-[13px] leading-6 text-muted">
+                <p className="mt-1 text-[13px] leading-6 text-muted sm:text-sm break-keep">
                   로그인 없이 데모와 팀 참여는 그대로 사용할 수 있어요.
                 </p>
               </div>
@@ -2722,7 +3131,7 @@ function OnboardingScreen({
             className="flex w-full items-center justify-between rounded-2xl border border-line bg-white px-4 py-4 text-left shadow-soft"
           >
             <span className="text-sm font-semibold text-ink">초대 코드로 참여하기</span>
-            <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+            <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
               CODE
             </span>
           </button>
@@ -2732,7 +3141,7 @@ function OnboardingScreen({
             className="flex w-full items-center justify-between rounded-2xl border border-line bg-white px-4 py-4 text-left shadow-soft"
           >
             <span className="text-sm font-semibold text-ink">초대 링크로 참여하기</span>
-            <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+            <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
               LINK
             </span>
           </button>
@@ -2742,7 +3151,7 @@ function OnboardingScreen({
             className="flex w-full items-center justify-between rounded-2xl border border-line bg-white px-4 py-4 text-left shadow-soft"
           >
             <span className="text-sm font-semibold text-ink">QR 스캔으로 팀 참여하기</span>
-            <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+            <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
               QR
             </span>
           </button>
@@ -2764,29 +3173,50 @@ function MyTeamsSection({
   isLoading,
   message,
   onEnterTeam,
+  onLeaveTeam,
+  onDeleteTeam,
   teams,
 }: {
   isAuthenticated: boolean;
   isLoading: boolean;
   message: string;
   onEnterTeam: (summary: ProfileTeamSummary) => void;
+  onLeaveTeam: (summary: ProfileTeamSummary) => Promise<{ ok: boolean; message: string }>;
+  onDeleteTeam: (summary: ProfileTeamSummary) => Promise<{ ok: boolean; message: string }>;
   teams: ProfileTeamSummary[];
 }) {
+  const [menuTeamId, setMenuTeamId] = useState<string | null>(null);
+  const [dialogState, setDialogState] = useState<
+    | { kind: "none" }
+    | { kind: "leave"; summary: ProfileTeamSummary }
+    | { kind: "delete"; summary: ProfileTeamSummary }
+  >({ kind: "none" });
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [dialogMessage, setDialogMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   if (!isAuthenticated) {
     return null;
   }
+
+  const closeDialog = () => {
+    setDialogState({ kind: "none" });
+    setDeleteConfirmText("");
+    setDialogMessage("");
+    setIsSubmitting(false);
+  };
 
   return (
     <section className="mx-auto mt-4 w-full max-w-md px-4 pb-6">
       <div className="rounded-[2rem] border border-line bg-white p-5 shadow-soft">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand sm:text-xs">
               My Teams
             </p>
             <h2 className="mt-1 text-lg font-semibold text-ink">내 팀</h2>
           </div>
-          <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+          <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
             {teams.length}개 팀
           </span>
         </div>
@@ -2813,13 +3243,54 @@ function MyTeamsSection({
                       {summary.member.is_leader ? " · 팀장" : ""}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onEnterTeam(summary)}
-                    className="rounded-xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
-                  >
-                    들어가기
-                  </button>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onEnterTeam(summary)}
+                      className="rounded-xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    >
+                      들어가기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMenuTeamId((current) =>
+                          current === summary.team.id ? null : summary.team.id,
+                        )
+                      }
+                      className="rounded-xl border border-line bg-white px-3 py-2 text-[12px] font-semibold text-muted"
+                    >
+                      더보기
+                    </button>
+                    {menuTeamId === summary.team.id ? (
+                      <div className="w-36 rounded-2xl border border-line bg-white p-2 shadow-soft">
+                        {summary.member.is_leader ? null : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuTeamId(null);
+                              setDialogState({ kind: "leave", summary });
+                            }}
+                            className="w-full rounded-xl px-3 py-2 text-left text-[12px] font-semibold text-ink hover:bg-canvas"
+                          >
+                            팀 나가기
+                          </button>
+                        )}
+                        {summary.member.is_leader ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuTeamId(null);
+                              setDialogState({ kind: "delete", summary });
+                            }}
+                            className="w-full rounded-xl px-3 py-2 text-left text-[12px] font-semibold text-danger hover:bg-canvas"
+                          >
+                            팀 삭제
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ))
@@ -2829,8 +3300,303 @@ function MyTeamsSection({
             </div>
           )}
         </div>
+
+        {dialogState.kind !== "none" ? (
+          <TeamActionModal
+            action={dialogState.kind}
+            confirmText={deleteConfirmText}
+            message={dialogMessage}
+            isSubmitting={isSubmitting}
+            teamName={dialogState.summary.team.team_name}
+            onClose={closeDialog}
+            onConfirmTextChange={setDeleteConfirmText}
+            onAction={async () => {
+              if (isSubmitting) {
+                return;
+              }
+
+              if (dialogState.kind === "delete" && deleteConfirmText.trim() !== dialogState.summary.team.team_name) {
+                setDialogMessage("팀 이름을 정확히 입력해야 삭제할 수 있습니다.");
+                return;
+              }
+
+              setIsSubmitting(true);
+              const result =
+                dialogState.kind === "leave"
+                  ? await onLeaveTeam(dialogState.summary)
+                  : await onDeleteTeam(dialogState.summary);
+
+              setDialogMessage(result.message);
+              if (result.ok) {
+                closeDialog();
+              }
+              setIsSubmitting(false);
+            }}
+          />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+function TeamActionModal({
+  action,
+  confirmText,
+  isSubmitting,
+  message,
+  onAction,
+  onClose,
+  onConfirmTextChange,
+  teamName,
+}: {
+  action: "leave" | "delete";
+  confirmText: string;
+  isSubmitting: boolean;
+  message: string;
+  onAction: () => void;
+  onClose: () => void;
+  onConfirmTextChange: (value: string) => void;
+  teamName: string;
+}) {
+  const isDelete = action === "delete";
+  const body = isDelete
+    ? "팀을 정말 삭제하시겠습니까?\n\n팀의 업무, 회의, 채팅, 회의록, 공강 정보, 파일이 함께 삭제될 수 있습니다.\n이 작업은 되돌릴 수 없습니다."
+    : "이 팀에서 나가시겠습니까?\n다시 참여하려면 초대 코드나 링크가 필요합니다.";
+
+  return (
+    <ModalShell title={isDelete ? "팀 삭제" : "팀 나가기"} onClose={onClose} tone="confirm">
+      <p className="whitespace-pre-line text-[13px] leading-7 text-muted">{body}</p>
+      {isDelete ? (
+        <label className="mt-4 block">
+          <span className="mb-2 block text-[13px] font-semibold text-ink">팀 이름 확인</span>
+          <input
+            value={confirmText}
+            onChange={(event) => onConfirmTextChange(event.target.value)}
+            placeholder={teamName}
+            className="w-full rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
+          />
+        </label>
+      ) : null}
+      {message ? (
+        <p className="mt-4 rounded-2xl bg-[#f7f9fd] px-4 py-3 text-[12px] leading-6 text-[#445066]">
+          {message}
+        </p>
+      ) : null}
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-2xl border border-line bg-white px-4 py-3 font-semibold text-muted"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          onClick={onAction}
+          disabled={isSubmitting || (isDelete && confirmText.trim() !== teamName)}
+          className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand disabled:opacity-60"
+        >
+          {isSubmitting ? "처리 중..." : isDelete ? "삭제" : "나가기"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function WorkspaceDrawer({
+  isOpen,
+  currentTeam,
+  isLeader,
+  firstItemRef,
+  onClose,
+  onOpenInvite,
+  onOpenProjectSettings,
+  onOpenTeamList,
+  onRequestDelete,
+  onRequestLeave,
+  onLogout,
+}: {
+  isOpen: boolean;
+  currentTeam: ProfileTeamSummary | null;
+  isLeader: boolean;
+  firstItemRef: React.RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onOpenInvite: () => void;
+  onOpenProjectSettings: () => void;
+  onOpenTeamList: () => void;
+  onRequestDelete: () => void;
+  onRequestLeave: () => void;
+  onLogout: () => void;
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-40">
+      <button
+        type="button"
+        aria-label="메뉴 닫기"
+        className="absolute inset-0 bg-slate-950/35"
+        onClick={onClose}
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="workspace-drawer-title"
+        className="absolute left-0 top-0 flex h-full w-[min(88vw,20rem)] max-w-[20rem] flex-col border-r border-line bg-white p-4 shadow-[20px_0_50px_rgba(15,23,42,0.15)]"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand sm:text-xs">
+              Menu
+            </p>
+            <h2 id="workspace-drawer-title" className="mt-1 text-lg font-semibold text-ink">
+              메뉴
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-canvas px-3 py-2 text-sm font-semibold text-muted"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2 overflow-y-auto pr-1">
+          <DrawerCard
+            title="현재 팀 정보"
+            description={
+              currentTeam
+                ? `${currentTeam.team.team_name}\n${currentTeam.team.course_name}`
+                : "현재 팀 정보를 불러올 수 없습니다."
+            }
+          />
+          <DrawerButton buttonRef={firstItemRef} onClick={onOpenTeamList}>
+            내 팀
+          </DrawerButton>
+          <DrawerButton onClick={onOpenInvite}>팀원 초대</DrawerButton>
+          <DrawerButton onClick={onOpenProjectSettings}>프로젝트 설정</DrawerButton>
+          <div className="mt-2 border-t border-line pt-2">
+          {isLeader ? (
+            <>
+              <DrawerButton tone="danger" onClick={onRequestDelete}>
+                팀 삭제
+              </DrawerButton>
+            </>
+          ) : (
+            <DrawerButton tone="danger" onClick={onRequestLeave}>
+              팀 나가기
+            </DrawerButton>
+          )}
+          </div>
+          <DrawerButton tone="muted" onClick={onLogout}>
+            로그아웃
+          </DrawerButton>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DrawerCard({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-line bg-canvas px-4 py-4">
+      <p className="text-[12px] font-semibold text-brand">{title}</p>
+      <p className="mt-2 whitespace-pre-line text-[13px] leading-6 text-muted sm:text-sm break-keep">{description}</p>
+    </div>
+  );
+}
+
+function DrawerButton({
+  children,
+  onClick,
+  tone = "default",
+  buttonRef,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  tone?: "default" | "danger" | "muted";
+  buttonRef?: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-[#b54d4d]"
+      : tone === "muted"
+        ? "text-muted"
+        : "text-ink";
+
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center justify-between rounded-2xl border border-line bg-white px-4 py-4 text-left text-[13px] font-semibold shadow-soft ${toneClass}`}
+    >
+      {children}
+      <span className="text-[11px] text-muted">›</span>
+    </button>
+  );
+}
+
+function WorkspaceTeamActionModal({
+  action,
+  teamName,
+  onClose,
+  onConfirm,
+}: {
+  action: "leave" | "delete";
+  teamName: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const isDelete = action === "delete";
+  const canConfirm = !isDelete || confirmText.trim() === teamName;
+
+  return (
+    <ModalShell title={isDelete ? "팀 삭제" : "팀 나가기"} onClose={onClose} tone="confirm">
+      <p className="whitespace-pre-line text-[13px] leading-7 text-muted">
+        {isDelete
+          ? "팀을 정말 삭제하시겠습니까?\n\n팀의 업무, 회의, 채팅, 회의록, 공강 정보, 파일이 함께 삭제될 수 있습니다.\n이 작업은 되돌릴 수 없습니다."
+          : "이 팀에서 나가시겠습니까?\n다시 참여하려면 초대 코드나 링크가 필요합니다."}
+      </p>
+      {isDelete ? (
+        <label className="mt-4 block">
+          <span className="mb-2 block text-[13px] font-semibold text-ink">팀 이름 확인</span>
+          <input
+            value={confirmText}
+            onChange={(event) => setConfirmText(event.target.value)}
+            placeholder={teamName}
+            className="w-full rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
+          />
+        </label>
+      ) : null}
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-2xl border border-line bg-white px-4 py-3 font-semibold text-muted"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          disabled={!canConfirm}
+          onClick={() => void onConfirm()}
+          className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand disabled:opacity-60"
+        >
+          {isDelete ? "삭제" : "나가기"}
+        </button>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -2915,7 +3681,7 @@ function AuthSheet({
       </div>
 
       {localMessage || message ? (
-        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted sm:text-base break-keep">
           {localMessage || message}
         </p>
       ) : null}
@@ -2976,13 +3742,13 @@ function InviteLinkModal({
   return (
     <SheetShell title="초대 링크로 참여하기" onClose={onClose}>
       <div className="rounded-2xl border border-line bg-canvas p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted sm:text-xs">
           초대 링크 확인
         </p>
         <p className="mt-3 break-all text-[13px] font-semibold text-ink">
           carrymate.app/join/CARRY2026
         </p>
-        <p className="mt-3 text-[13px] leading-6 text-muted">
+        <p className="mt-3 text-[13px] leading-6 text-muted sm:text-sm break-keep">
           초대 링크가 확인되었습니다. 확인 버튼을 누르면 데모 팀으로 바로 입장합니다.
         </p>
       </div>
@@ -2999,48 +3765,30 @@ function QrScannerModal({
   onScanSuccess: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-30 bg-slate-950/50 px-4 pb-6 pt-16">
-      <div className="mx-auto max-w-md rounded-[2rem] border border-white/15 bg-slate-950 p-5 shadow-soft">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-200">
-              QR Scanner
-            </p>
-            <h2 className="mt-1 text-lg font-bold text-white">QR 스캔으로 팀 참여하기</h2>
+    <ModalShell title="QR 스캔으로 팀 참여하기" onClose={onClose} tone="dark">
+      <p className="mt-1 text-sm leading-6 text-slate-300">
+        아래 스캔 프레임을 눌러 데모 QR을 스캔하세요.
+      </p>
+      <button
+        type="button"
+        onClick={onScanSuccess}
+        className="relative mt-5 flex aspect-square w-full items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/15 bg-[linear-gradient(180deg,#0f172a,#111c31)]"
+      >
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:24px_24px]" />
+        <div className="absolute inset-x-8 top-1/2 h-px -translate-y-1/2 bg-brand/70 shadow-[0_0_12px_rgba(0,113,227,0.18)]" />
+        <div className="relative h-56 w-56 rounded-[1.5rem] border border-white/25 bg-white/5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+          <Corner className="left-0 top-0 border-l-4 border-t-4" />
+          <Corner className="right-0 top-0 border-r-4 border-t-4" />
+          <Corner className="bottom-0 left-0 border-b-4 border-l-4" />
+          <Corner className="bottom-0 right-0 border-b-4 border-r-4" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white">
+              탭해서 CARRY2026 스캔
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-white/10 px-3 py-1 text-sm font-medium text-white"
-          >
-            닫기
-          </button>
         </div>
-        <p className="mt-3 text-sm leading-6 text-slate-300">
-          아래 스캔 프레임을 눌러 데모 QR을 스캔하세요.
-        </p>
-
-        <button
-          type="button"
-          onClick={onScanSuccess}
-          className="relative mt-5 flex aspect-square w-full items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/15 bg-[linear-gradient(180deg,#0f172a,#111c31)]"
-        >
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:24px_24px]" />
-          <div className="absolute inset-x-8 top-1/2 h-px -translate-y-1/2 bg-brand/70 shadow-[0_0_12px_rgba(0,113,227,0.18)]" />
-          <div className="relative h-56 w-56 rounded-[1.5rem] border border-white/25 bg-white/5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-            <Corner className="left-0 top-0 border-l-4 border-t-4" />
-            <Corner className="right-0 top-0 border-r-4 border-t-4" />
-            <Corner className="bottom-0 left-0 border-b-4 border-l-4" />
-            <Corner className="bottom-0 right-0 border-b-4 border-r-4" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white">
-                탭해서 CARRY2026 스캔
-              </span>
-            </div>
-          </div>
-        </button>
-      </div>
-    </div>
+      </button>
+    </ModalShell>
   );
 }
 
@@ -3060,56 +3808,53 @@ function ShareInviteModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-30 bg-slate-950/30 px-4 pb-6 pt-16">
-      <div className="mx-auto max-w-md rounded-[2rem] border border-line bg-white p-5 shadow-soft">
-        <div className="rounded-[1.75rem] border border-line bg-white p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-            팀 생성 완료
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-ink">팀원 초대 공유</h2>
-          <p className="mt-2 text-[13px] leading-6 text-muted">
-            발표 전에 코드, 링크, QR 중 편한 방식으로 바로 공유할 수 있어요.
-          </p>
-          {noticeMessage ? (
-            <p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-success">
-              {noticeMessage}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <InviteInfoCard label="초대 코드" value={inviteCode} />
-          <InviteInfoCard label="초대 링크" value={inviteLink} />
-          <div className="rounded-2xl border border-line bg-canvas p-4">
-            <p className="text-[13px] font-semibold text-ink">초대 QR</p>
-            <FakeQrCode value={inviteLink} />
-          </div>
-        </div>
-
-        {copyFeedback ? (
-          <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-success">
-            {copyFeedback}
+    <ModalShell title="팀원 초대 공유" onClose={onClose}>
+      <div className="rounded-[1.75rem] border border-line bg-white p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted sm:text-xs">
+          팀 생성 완료
+        </p>
+        <p className="mt-2 text-[13px] leading-6 text-muted sm:text-sm break-keep">
+          발표 전에 코드, 링크, QR 중 편한 방식으로 바로 공유할 수 있어요.
+        </p>
+        {noticeMessage ? (
+          <p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-success">
+            {noticeMessage}
           </p>
         ) : null}
+      </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={onCopy}
-            className="rounded-2xl border border-line bg-white px-4 py-3 font-semibold text-ink"
-          >
-            복사하기
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand"
-          >
-            닫고 입장하기
-          </button>
+      <div className="mt-4 space-y-3">
+        <InviteInfoCard label="초대 코드" value={inviteCode} />
+        <InviteInfoCard label="초대 링크" value={inviteLink} />
+        <div className="rounded-2xl border border-line bg-canvas p-4">
+          <p className="text-[13px] font-semibold text-ink">초대 QR</p>
+          <FakeQrCode value={inviteLink} />
         </div>
       </div>
-    </div>
+
+      {copyFeedback ? (
+        <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-[13px] font-semibold text-success">
+          {copyFeedback}
+        </p>
+      ) : null}
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={onCopy}
+          className="rounded-2xl border border-line bg-white px-4 py-3 font-semibold text-ink"
+        >
+          복사하기
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand"
+        >
+          닫고 입장하기
+        </button>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -3132,7 +3877,7 @@ function MemberLinkSheet({
 }) {
   return (
     <SheetShell title="내 팀원 정보 연결" onClose={onClose}>
-      <p className="text-sm leading-6 text-muted">
+      <p className="text-sm leading-6 text-muted sm:text-base break-keep">
         이름이 같다는 이유만으로 자동 연결하지 않습니다. 아래 미연결 팀원 중 내 항목을 선택하거나, 없으면 새 팀원으로 참여해 주세요.
       </p>
       <div className="space-y-3">
@@ -3151,19 +3896,19 @@ function MemberLinkSheet({
                   {member.role} · {member.skill_tag}
                 </p>
               </div>
-              <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+              <span className="rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted sm:text-xs">
                 선택
               </span>
             </button>
           ))
         ) : (
-          <div className="rounded-2xl border border-line bg-canvas px-4 py-4 text-sm leading-6 text-muted">
+          <div className="rounded-2xl border border-line bg-canvas px-4 py-4 text-sm leading-6 text-muted sm:text-base break-keep">
             아직 연결 가능한 초대 대상 팀원이 없습니다. 내 이름으로 새 팀원 참여를 만들 수 있어요.
           </div>
         )}
       </div>
       {message ? (
-        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted sm:text-base break-keep">
           {message}
         </p>
       ) : null}
@@ -3212,7 +3957,7 @@ function CreateTeamSheet({
       {creatorName ? (
         <div className="rounded-2xl border border-line bg-canvas px-4 py-3">
           <p className="text-[12px] font-semibold text-brand">로그인 팀장 자동 추가</p>
-          <p className="mt-1 text-[13px] leading-6 text-muted">
+          <p className="mt-1 text-[13px] leading-6 text-muted sm:text-sm break-keep">
             {creatorName}님은 자동으로 팀장으로 추가됩니다. 아래에는 초대할 팀원 이름만 입력해 주세요.
           </p>
         </div>
@@ -3258,7 +4003,7 @@ function CreateTeamSheet({
         />
       </div>
       {localMessage || submitMessage ? (
-        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted sm:text-base break-keep">
           {localMessage || submitMessage}
         </p>
       ) : null}
@@ -3347,33 +4092,30 @@ function ConfirmModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/35 px-4 py-24">
-      <div className="mx-auto max-w-md rounded-[2rem] border border-line bg-white p-6 shadow-soft">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-          팀원 변경
-        </p>
-        <h2 className="mt-3 text-xl font-semibold text-ink">{memberName}님 나가기</h2>
-        <p className="mt-3 text-[13px] leading-7 text-muted">
-          정말로 이 팀원이 나가나요? 해당 팀원의 업무가 담당자 미정 상태로 전환됩니다.
-        </p>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-2xl border border-line bg-white px-4 py-3 font-semibold text-muted"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand"
-          >
-            승인
-          </button>
-        </div>
+    <ModalShell title={`${memberName}님 나가기`} onClose={onCancel} tone="confirm">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted sm:text-xs">
+        팀원 변경
+      </p>
+      <p className="mt-3 text-[13px] leading-7 text-muted">
+        정말로 이 팀원이 나가나요? 해당 팀원의 업무가 담당자 미정 상태로 전환됩니다.
+      </p>
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-2xl border border-line bg-white px-4 py-3 font-semibold text-muted"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-2xl bg-brand px-4 py-3 font-semibold text-white shadow-brand"
+        >
+          승인
+        </button>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -3397,7 +4139,7 @@ function QuickActionSheet({
 
   return (
     <SheetShell title={title} onClose={onClose}>
-      <p className="text-sm leading-6 text-muted">{description}</p>
+      <p className="text-sm leading-6 text-muted sm:text-base break-keep">{description}</p>
       <input
         value={value}
         onChange={(event) => setValue(event.target.value)}
@@ -3454,7 +4196,7 @@ function MeetingCreateSheet({
 
   return (
     <SheetShell title="회의 만들기" onClose={onClose}>
-      <p className="text-sm leading-6 text-muted">
+      <p className="text-sm leading-6 text-muted sm:text-base break-keep">
         실제 UUID 팀에서는 회의가 DB에 저장되고, 종료 후 채팅 요약과 할 일 전송까지 연결됩니다.
       </p>
       <div className="space-y-3">
@@ -3487,7 +4229,7 @@ function MeetingCreateSheet({
         />
       </div>
       {message ? (
-        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted">
+        <p className="rounded-2xl bg-canvas px-4 py-3 text-sm leading-6 text-muted sm:text-base break-keep">
           {message}
         </p>
       ) : null}
@@ -3531,21 +4273,9 @@ function SheetShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-30 bg-slate-950/30 px-4 pb-6 pt-24">
-      <div className="mx-auto max-w-md rounded-[2rem] border border-line bg-white p-5 shadow-soft">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-ink">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-canvas px-3 py-1 text-sm font-medium text-muted"
-          >
-            닫기
-          </button>
-        </div>
-        <div className="mt-4 space-y-4">{children}</div>
-      </div>
-    </div>
+    <ModalShell title={title} onClose={onClose}>
+      <div className="space-y-4">{children}</div>
+    </ModalShell>
   );
 }
 
