@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { normalizeStoredFileCategory } from "@/lib/supabase/files";
-import type { FileCategory, FileItem, TeamMember } from "@/types/carrymate";
+import type { FileCategory, FileItem } from "@/types/carrymate";
 
 type UploadResult = {
   ok: boolean;
@@ -24,7 +24,6 @@ type UpdateResourceInput = {
 
 type FileTabProps = {
   files: FileItem[];
-  members: TeamMember[];
   canUpload: boolean;
   createDialogRequestId?: number;
   syncMessage?: string;
@@ -106,7 +105,6 @@ function formatUploadedLabel(value: string) {
 
 export function FileTab({
   files,
-  members,
   canUpload,
   createDialogRequestId,
   syncMessage,
@@ -118,7 +116,6 @@ export function FileTab({
   onOpenLink,
 }: FileTabProps) {
   const [query, setQuery] = useState("");
-  const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -163,8 +160,7 @@ export function FileTab({
     }),
     [files],
   );
-
-  const activeMemberCount = members.filter((member) => member.status === "active").length;
+  const statusMessage = message || syncMessage;
 
   const closeDialog = () => {
     setDialogMode({ kind: "closed" });
@@ -308,47 +304,6 @@ export function FileTab({
 
   return (
     <div className="space-y-4 pb-4">
-      <section className="rounded-[26px] bg-white p-5 shadow-panel">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold text-[#1e70e6] sm:text-xs lg:text-sm">파일 탭</p>
-            <h2 className="mt-2 break-keep text-[20px] font-extrabold leading-tight text-[#282438] sm:text-[24px] lg:text-[30px]">
-              회의 자료를 바로 정리하고 찾을 수 있어요
-            </h2>
-            <p className="mt-2 break-keep text-[12px] leading-6 text-[#7a7387] sm:text-sm lg:text-base">
-              파일과 링크를 팀원들과 한곳에서 관리하고 공유할 수 있습니다.
-            </p>
-          </div>
-          <span className="rounded-full bg-[#f3f7ff] px-3 py-1 text-[11px] font-bold text-[#1e70e6] sm:text-xs lg:text-sm">
-            {files.length}개 자료
-          </span>
-        </div>
-      </section>
-
-      <section className="rounded-[24px] bg-white p-5 shadow-card">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[13px] font-extrabold text-[#282438] sm:text-sm lg:text-base">지원 항목</p>
-            <p className="mt-1 break-keep text-[11px] leading-5 text-[#8f889b] sm:text-xs lg:text-sm">
-              회의록, 발표자료, 참고자료를 파일 또는 링크로 등록할 수 있습니다.
-            </p>
-          </div>
-          <span className="rounded-full bg-canvas px-3 py-1 text-[10px] font-bold text-muted sm:text-xs">
-            활성 팀원 {activeMemberCount}명
-          </span>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {CATEGORY_OPTIONS.map((item) => (
-            <span
-              key={item.value}
-              className="rounded-full border border-[#e5e9f2] bg-[#fafcff] px-3 py-2 text-[11px] font-semibold text-[#445066] sm:text-xs lg:text-sm"
-            >
-              {item.label}
-            </span>
-          ))}
-        </div>
-      </section>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {(["minutes", "presentation", "reference"] as const).map((key) => {
           const meta = CATEGORY_META[key];
@@ -356,7 +311,7 @@ export function FileTab({
             <button
               type="button"
               key={key}
-              className="group flex w-full items-center gap-3 rounded-[22px] bg-white px-4 py-4 text-left shadow-card transition hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] active:scale-[0.99]"
+              className="group flex h-full min-h-[108px] w-full flex-col items-start gap-2 rounded-[22px] border border-[#edf0f6] bg-white px-4 py-4 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] active:scale-[0.99]"
               aria-label={`${meta.title} 자료 ${counts[key]}개`}
             >
               <span
@@ -377,116 +332,7 @@ export function FileTab({
         })}
       </div>
 
-      <section className="rounded-[24px] bg-white p-5 shadow-card">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[13px] font-extrabold text-[#282438] sm:text-sm lg:text-base">자료 추가</p>
-            <p className="mt-1 break-keep text-[11px] leading-5 text-[#8f889b] sm:text-xs lg:text-sm">
-              파일 업로드 또는 링크 등록을 선택해 주세요.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={openCreateDialog}
-            disabled={!canUpload}
-            className="min-h-11 rounded-2xl bg-[#1e70e6] px-4 py-3 text-sm font-semibold text-white shadow-brand disabled:opacity-60 sm:text-[15px] lg:text-base"
-          >
-            자료 추가
-          </button>
-        </div>
-
-        {syncMessage ? (
-          <p className="mt-4 rounded-2xl bg-[#f7f9fd] px-4 py-3 text-[12px] leading-6 text-[#445066] sm:text-sm lg:text-base">
-            {syncMessage}
-          </p>
-        ) : null}
-
-        {canUpload ? (
-          <div
-            onDragEnter={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsDragging(true);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsDragging(true);
-            }}
-            onDragLeave={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsDragging(false);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsDragging(false);
-              void uploadSelectedFile(event.dataTransfer.files[0] ?? null);
-            }}
-            className={`mt-4 rounded-[22px] border border-dashed px-4 py-5 text-center transition ${
-              isDragging ? "border-[#1e70e6] bg-[#f3f7ff]" : "border-[#d8deea] bg-[#fafcff]"
-            }`}
-          >
-            <p className="text-[13px] font-extrabold text-[#282438] sm:text-sm lg:text-base">파일 업로드</p>
-            <p className="mt-1 break-keep text-[11px] leading-5 text-[#8f889b] sm:text-xs lg:text-sm">
-              파일을 끌어 놓거나 버튼을 눌러 선택해 주세요.
-            </p>
-            <div className="mx-auto mt-3 max-w-xs">
-              <SelectField
-                label="카테고리"
-                value={selectedCategory}
-                onChange={(value) => setSelectedCategory(value as FileCategory)}
-                options={CATEGORY_OPTIONS}
-              />
-            </div>
-            <div className="mt-4 flex items-center justify-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={FILE_ACCEPT_VALUE}
-                className="hidden"
-                onChange={(event) => {
-                  void uploadSelectedFile(event.target.files?.[0] ?? null);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="min-h-11 rounded-2xl bg-[#1e70e6] px-4 py-3 text-sm font-semibold text-white shadow-brand disabled:opacity-60 sm:text-[15px] lg:text-base"
-              >
-                파일 선택
-              </button>
-            </div>
-            {isUploading ? (
-              <div className="mt-4">
-                <div className="h-2 overflow-hidden rounded-full bg-[#e7edf8]">
-                  <div
-                    className="h-full rounded-full bg-[#1e70e6] transition-all"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-[11px] font-semibold text-[#1e70e6] sm:text-xs lg:text-sm">
-                  업로드 중 {uploadProgress}%
-                </p>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="mt-4 rounded-[22px] border border-dashed border-[#d8deea] bg-[#fafcff] px-4 py-5 text-center text-[11px] leading-6 text-[#8f889b] sm:text-xs lg:text-sm">
-            업로드 권한이 없습니다. 자료는 확인만 할 수 있습니다.
-          </div>
-        )}
-
-        {message ? (
-          <p className="mt-4 rounded-2xl bg-[#f7f9fd] px-4 py-3 text-[12px] leading-6 text-[#445066] sm:text-sm lg:text-base">
-            {message}
-          </p>
-        ) : null}
-      </section>
-
-      <div className="rounded-[18px] border border-[#ebe7f3] bg-white px-4 py-3 shadow-card">
+      <div className="rounded-[18px] border border-[#ebe7f3] bg-white px-4 py-3 shadow-card transition hover:shadow-[0_12px_28px_rgba(64,52,115,0.08)] focus-within:border-[#cfdaf2] focus-within:shadow-[0_12px_28px_rgba(64,52,115,0.08)]">
         <div className="flex items-center gap-3">
           <span className="text-[#9a94a8]" aria-hidden="true">
             ⌕
@@ -500,7 +346,12 @@ export function FileTab({
         </div>
       </div>
 
-      <SectionTitle title="자료 목록" />
+      {statusMessage ? (
+        <div className="rounded-[18px] border border-[#e7edf8] bg-white px-4 py-3 text-[12px] leading-6 text-[#445066] shadow-card sm:text-sm lg:text-base">
+          {statusMessage}
+        </div>
+      ) : null}
+
       <div className="space-y-2.5">
         {visibleFiles.length > 0 ? (
           visibleFiles.map((file) => {
@@ -509,7 +360,10 @@ export function FileTab({
             const isLink = isLinkItem(file);
             const isActionDisabled = !canUpload;
             return (
-              <article key={file.id} className="rounded-[20px] bg-white px-4 py-4 shadow-card sm:px-5 sm:py-5">
+              <article
+                key={file.id}
+                className="rounded-[20px] border border-[#edf0f6] bg-white px-4 py-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] sm:px-5 sm:py-5"
+              >
                 <div className="flex items-start gap-3">
                   <span
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold sm:h-11 sm:w-11 sm:text-xs ${meta.tone}`}
@@ -562,7 +416,7 @@ export function FileTab({
             );
           })
         ) : (
-          <Empty text="아직 등록된 자료가 없습니다.\n파일이나 링크를 추가해보세요." />
+          <Empty />
         )}
       </div>
 
@@ -683,14 +537,18 @@ export function FileTab({
   );
 }
 
-function SectionTitle({ title }: { title: string }) {
-  return <h3 className="px-1 text-[15px] font-extrabold text-[#282438] sm:text-lg lg:text-xl">{title}</h3>;
-}
-
-function Empty({ text }: { text: string }) {
+function Empty() {
   return (
-    <div className="rounded-[20px] border border-dashed border-[#ddd8e9] bg-white px-4 py-7 text-center text-[11px] leading-6 whitespace-pre-line text-[#948da1] sm:text-xs lg:text-sm">
-      {text}
+    <div className="rounded-[24px] border border-dashed border-[#ddd8e9] bg-white px-5 py-10 text-center shadow-card sm:px-6 sm:py-12">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f3f7ff] text-[20px] font-bold text-[#1e70e6]">
+        +
+      </div>
+      <p className="mt-4 text-[14px] font-extrabold text-[#282438] sm:text-[15px] lg:text-base">
+        아직 등록된 자료가 없습니다.
+      </p>
+      <p className="mx-auto mt-2 max-w-[18rem] break-keep text-[12px] leading-6 text-[#8f889b] sm:text-sm lg:text-base">
+        자료 추가 버튼을 눌러 회의록·발표자료·참고자료를 등록해보세요.
+      </p>
     </div>
   );
 }

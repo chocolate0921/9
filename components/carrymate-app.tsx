@@ -2939,7 +2939,6 @@ export function CarryMateApp({
           {activeTab === "files" && (
             <FileTab
               files={files}
-              members={members}
               canUpload={hasPersistentProjectId && Boolean(currentMember)}
               createDialogRequestId={fileCreateDialogRequestId}
               syncMessage={fileSyncMessage}
