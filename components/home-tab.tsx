@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { ConfirmedMeeting, Task } from "@/types/carrymate";
 
 type Summary = {
@@ -74,7 +74,7 @@ export function HomeTab({
   };
 
   return (
-    <div className="space-y-4 pb-4">
+    <div className="home-dashboard space-y-4 pb-4">
       {/* 전체 진행률 */}
       <section className="rounded-[28px] border border-[#eeeaf8] bg-white px-5 py-7 shadow-[0_10px_30px_rgba(80,63,155,0.08)]">
         <p className="text-center text-[12px] font-semibold text-[#77718a] sm:text-sm lg:text-base">
@@ -119,13 +119,7 @@ export function HomeTab({
             <Avatar label="서" />
           </div>
 
-          <button
-            type="button"
-            onClick={onJumpToTasks}
-            className="rounded-xl bg-white px-4 py-2.5 text-[12px] font-bold text-[#5148df] shadow-lg"
-          >
-            지금 시작
-          </button>
+
         </div>
       </section>
 

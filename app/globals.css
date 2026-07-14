@@ -2,39 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html {
-  background: #f3f5f7;
-}
-
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { background: #eef1f8; }
 body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top, rgba(0, 113, 227, 0.035), transparent 22%),
-    linear-gradient(180deg, #fafbfc 0%, #f3f5f7 100%);
-  color: #111827;
-  font-family:
-    "SF Pro Display",
-    "Segoe UI",
-    "Apple SD Gothic Neo",
-    "Noto Sans KR",
-    sans-serif;
+    radial-gradient(circle at 18% 0%, rgba(110, 94, 244, .10), transparent 28%),
+    radial-gradient(circle at 90% 8%, rgba(135, 187, 255, .10), transparent 24%),
+    linear-gradient(145deg, #f8f9fd 0%, #eef1f7 100%);
+  color: #24243a;
+  font-family: Pretendard, SUIT, Inter, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+}
+button, input, select, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
+.carrymate-header,
+.neu-bottom-nav {
+  border: 1px solid rgba(255,255,255,.82);
+  background: rgba(244,246,251,.9);
+  box-shadow: 14px 14px 30px rgba(167,174,199,.28), -12px -12px 28px rgba(255,255,255,.96);
+  backdrop-filter: blur(18px);
+}
+.neu-icon-button {
+  border: 1px solid rgba(255,255,255,.88);
+  background: #f3f5fa;
+  box-shadow: 7px 7px 15px rgba(165,172,197,.28), -7px -7px 15px rgba(255,255,255,.98);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.neu-icon-button:hover { transform: translateY(-2px); }
+.neu-icon-button:active { box-shadow: inset 4px 4px 8px rgba(165,172,197,.26), inset -4px -4px 8px rgba(255,255,255,.95); transform: none; }
+.neu-primary,
+.neu-ai-button {
+  border: 1px solid rgba(255,255,255,.28);
+  background: linear-gradient(145deg,#7668f5,#5148df);
+  box-shadow: 8px 8px 18px rgba(82,72,218,.30), -5px -5px 14px rgba(255,255,255,.75);
+}
+.neu-nav-active {
+  background: linear-gradient(145deg,#ece9ff,#f5f3ff);
+  box-shadow: inset 4px 4px 9px rgba(132,121,211,.16), inset -4px -4px 9px rgba(255,255,255,.95);
 }
 
-button,
-input,
-select {
-  font: inherit;
+/* 기존 화면 전체를 하나의 Soft UI 시스템으로 통일 */
+.carrymate-workspace section[class*="rounded"],
+.carrymate-workspace div[class*="rounded"][class*="bg-white"] {
+  border-color: rgba(255,255,255,.8) !important;
+  background-color: rgba(246,247,252,.92) !important;
+  box-shadow: 10px 10px 24px rgba(166,173,198,.20), -9px -9px 22px rgba(255,255,255,.90) !important;
+}
+.carrymate-workspace section[class*="bg-gradient"] {
+  background: linear-gradient(135deg,#7769f6 0%,#594de4 62%,#4e45d8 100%) !important;
+  box-shadow: 14px 14px 30px rgba(78,69,216,.28), -8px -8px 22px rgba(255,255,255,.75) !important;
+}
+.carrymate-workspace input,
+.carrymate-workspace textarea,
+.carrymate-workspace select {
+  border-color: transparent !important;
+  background: #eef1f7 !important;
+  box-shadow: inset 5px 5px 10px rgba(168,175,198,.20), inset -5px -5px 10px rgba(255,255,255,.9) !important;
+}
+.carrymate-workspace input:focus,
+.carrymate-workspace textarea:focus,
+.carrymate-workspace select:focus {
+  outline: 2px solid rgba(98,89,232,.25);
+  outline-offset: 2px;
+}
+.carrymate-workspace button[class*="bg-white"] {
+  border-color: rgba(255,255,255,.82) !important;
+  background: #f5f6fb !important;
+  box-shadow: 6px 6px 13px rgba(166,173,198,.20), -6px -6px 13px rgba(255,255,255,.92) !important;
+}
+.carrymate-workspace button { transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease; }
+.carrymate-workspace button:hover { transform: translateY(-1px); }
+.carrymate-workspace button:active { transform: translateY(0); }
+
+@media (min-width: 1024px) {
+  .carrymate-header { position: static; }
+  .carrymate-workspace > section { padding-bottom: 1rem; }
+}
+@media (max-width: 640px) {
+  .carrymate-header { border-radius: 24px; }
+  .neu-bottom-nav { border-radius: 22px; }
 }
 
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
+
+/* 홈 화면을 조금 더 밝고 선명하게 표시 */
+.carrymate-workspace .home-dashboard section {
+  background-color: rgba(250, 251, 255, .96) !important;
 }

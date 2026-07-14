@@ -498,9 +498,7 @@ export function ScheduleTab({
           <div>
             <p className="text-[11px] font-bold text-[#7b74ee] sm:text-xs">팀 공강 입력</p>
             <h3 className="mt-2 text-[18px] font-extrabold text-[#2d293b] sm:text-xl lg:text-2xl break-keep">
-              {editableMember
-                ? `${editableMember.name}의 공강 시간`
-                : "공강 시간을 입력하려면 팀원 연결이 필요합니다."}
+              팀 공강 입력
             </h3>
             <p className="mt-2 text-[11px] leading-5 text-[#938ca1] sm:text-xs lg:text-sm break-keep">
               시작 교시와 마지막 교시를 선택하면 사이 시간도 함께 선택됩니다.
@@ -617,7 +615,7 @@ export function ScheduleTab({
         </div>
       </section>
 
-      <SectionTitle title="추천 시간 카드" action="일정 추가" onClick={onAddSchedule} />
+      <SectionTitle title="팀플 가능한 시간" action="일정 추가" onClick={onAddSchedule} />
       <div className="space-y-3">
         {recommendedSlots.length > 0 ? (
           recommendedSlots.map((slot, index) => {
@@ -692,7 +690,7 @@ export function ScheduleTab({
             );
           })
         ) : (
-          <Empty text="추천 가능한 공강 시간이 아직 없습니다." />
+          <Empty text="팀플 가능한 시간이 아직 없습니다." />
         )}
       </div>
 

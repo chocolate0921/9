@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -2768,25 +2768,25 @@ export function CarryMateApp({
 
   return (
     <>
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 pb-[calc(env(safe-area-inset-bottom)+5rem)] pt-3 sm:px-4 lg:px-6">
-        <header className="mb-4 rounded-[2rem] border border-line bg-white/92 p-4 shadow-soft backdrop-blur">
-          <div className="grid grid-cols-[auto,minmax(0,1fr),auto] items-start gap-3">
+      <main className="carrymate-workspace mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:px-6 lg:px-8">
+        <header className="carrymate-header mb-6 rounded-[28px] p-5 sm:p-6">
+          <div className="grid min-h-[92px] grid-cols-[56px,minmax(0,1fr),auto] items-start gap-3">
             <button
               ref={menuButtonRef}
               type="button"
               aria-label="메뉴 열기"
               aria-expanded={isMenuOpen}
               onClick={() => setIsMenuOpen((current) => !current)}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-lg font-semibold text-ink shadow-soft"
+              className="neu-icon-button flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-semibold text-ink"
             >
               ☰
             </button>
 
             <div className="min-w-0 text-center">
-              <p className="truncate text-[11px] font-semibold uppercase tracking-[0.24em] text-brand sm:text-xs">
+              <p className="truncate text-[11px] font-bold uppercase tracking-[0.28em] text-brand sm:text-xs">
                 CarryMate
               </p>
-              <h1 className="mt-1 truncate text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[25px] lg:text-[30px]">
+              <h1 className="mt-1 truncate text-[20px] font-bold tracking-[-0.03em] text-ink sm:text-[26px] lg:text-[32px]">
                 {project.name}
               </h1>
               <p className="mt-1 truncate text-[12px] text-muted sm:text-[13px] lg:text-sm">
@@ -2794,13 +2794,13 @@ export function CarryMateApp({
               </p>
             </div>
 
-            <div className="flex min-w-0 flex-col items-end gap-2">
+            <div className="flex min-w-0 items-start justify-end">
               {isAuthenticated ? (
                 activeTab === "home" ? null : activeTab === "tasks" ? (
                   <button
                     type="button"
                     onClick={() => openSheet("task")}
-                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                     aria-label="업무 추가"
                   >
                     + 업무 추가
@@ -2809,7 +2809,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={() => openSheet("meeting")}
-                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                     aria-label="회의 만들기"
                   >
                     + 회의 만들기
@@ -2818,7 +2818,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={openFileCreateDialog}
-                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                     aria-label="자료 추가"
                   >
                     + 자료 추가
@@ -2828,7 +2828,7 @@ export function CarryMateApp({
                 <button
                   type="button"
                   onClick={() => openAuthSheet("signIn")}
-                  className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                  className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                 >
                   로그인
                 </button>
@@ -2865,15 +2865,7 @@ export function CarryMateApp({
                   </button>
                 ) : null}
               </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => openAuthSheet("signIn")}
-                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
-              >
-                로그인 / 회원가입
-              </button>
-            )}
+            ) : null}
           </div>
           {authMessage ? (
             <p className="mt-3 rounded-2xl bg-canvas px-4 py-3 text-[12px] font-medium text-muted">
@@ -2902,7 +2894,7 @@ export function CarryMateApp({
           ) : null}
         </header>
 
-        <section className="min-w-0 flex-1 space-y-4">
+        <section className="min-w-0 flex-1 space-y-6">
           {activeTab === "home" && (
             <HomeTab
               summary={summary}
@@ -2978,7 +2970,7 @@ export function CarryMateApp({
               type="button"
               aria-label="CarryMate AI 열기"
               onClick={() => setIsAssistantOpen(true)}
-              className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-[0_14px_34px_rgba(30,112,230,0.28)] transition hover:scale-[1.03] active:scale-[0.98] sm:right-6 sm:bottom-6"
+              className="neu-ai-button fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+7rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full text-white transition hover:scale-[1.04] active:scale-[0.97] sm:right-8 sm:bottom-8"
             >
               <AiSparkIcon />
             </button>,
