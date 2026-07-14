@@ -309,7 +309,7 @@ export function FileTab({
 
   return (
     <div className="space-y-4 pb-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {(["minutes", "presentation", "reference"] as const).map((key) => {
           const meta = CATEGORY_META[key];
           const isSelected = activeCategoryFilter === key;
@@ -321,21 +321,21 @@ export function FileTab({
                 setActiveCategoryFilter((current) => (current === key ? "all" : key))
               }
               aria-pressed={isSelected}
-              className={`group flex h-full min-h-[108px] w-full items-center gap-3 rounded-[22px] border px-4 py-4 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] active:scale-[0.99] ${
+              className={`group flex h-full min-h-[108px] w-full items-center gap-3 rounded-[22px] border px-4 py-4 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(64,52,115,0.10)] active:scale-[0.99] sm:px-5 sm:py-5 ${
                 isSelected ? "border-[#cfdaf2] bg-[#f8fbff]" : "border-[#edf0f6] bg-white"
               }`}
               aria-label={`${meta.title} 자료 ${counts[key]}개`}
             >
               <span
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[11px] font-extrabold ${meta.tone}`}
+                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-xs font-extrabold sm:h-14 sm:w-14 sm:text-sm ${meta.tone}`}
               >
                 {meta.icon}
               </span>
               <div className="min-w-0 flex-1 text-left">
-                <p className="truncate text-[13px] font-extrabold text-[#403a4d] sm:text-sm lg:text-base">
+                <p className="truncate text-sm font-extrabold text-[#403a4d] sm:text-base lg:text-lg">
                   {meta.title}
                 </p>
-                <p className="mt-1 text-[10px] text-[#8f889b] sm:text-[11px]">
+                <p className="mt-1 text-xs text-[#8f889b] sm:text-sm">
                   {counts[key]}개
                 </p>
               </div>
@@ -344,7 +344,7 @@ export function FileTab({
         })}
       </div>
 
-      <div className="rounded-[18px] border border-[#ebe7f3] bg-white px-4 py-3 shadow-card transition hover:shadow-[0_12px_28px_rgba(64,52,115,0.08)] focus-within:border-[#cfdaf2] focus-within:shadow-[0_12px_28px_rgba(64,52,115,0.08)]">
+        <div className="rounded-[18px] border border-[#ebe7f3] bg-white px-4 py-3 shadow-card transition hover:shadow-[0_12px_28px_rgba(64,52,115,0.08)] focus-within:border-[#cfdaf2] focus-within:shadow-[0_12px_28px_rgba(64,52,115,0.08)] sm:px-5 sm:py-4">
         <div className="flex items-center gap-3">
           <span className="text-[#9a94a8]" aria-hidden="true">
             ⌕
@@ -353,13 +353,13 @@ export function FileTab({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="자료명, 업로더, 카테고리 검색"
-            className="min-w-0 w-full bg-transparent text-[12px] outline-none placeholder:text-[#aaa4b5] sm:text-sm lg:text-base"
+            className="min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-[#aaa4b5] sm:text-base lg:text-lg"
           />
         </div>
       </div>
 
       {statusMessage ? (
-        <div className="rounded-[18px] border border-[#e7edf8] bg-white px-4 py-3 text-[12px] leading-6 text-[#445066] shadow-card sm:text-sm lg:text-base">
+        <div className="rounded-[18px] border border-[#e7edf8] bg-white px-4 py-3 text-sm leading-6 text-[#445066] shadow-card sm:px-5 sm:py-4 sm:text-base lg:text-lg">
           {statusMessage}
         </div>
       ) : null}
@@ -378,15 +378,15 @@ export function FileTab({
               >
                 <div className="flex items-start gap-3">
                   <span
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold sm:h-11 sm:w-11 sm:text-xs ${meta.tone}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold sm:h-11 sm:w-11 sm:text-sm ${meta.tone}`}
                   >
                     {isLink ? "URL" : meta.icon}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 break-words text-[12px] font-extrabold text-[#393445] sm:text-[13px] lg:text-base">
+                    <p className="line-clamp-2 break-words text-sm font-extrabold text-[#393445] sm:text-base lg:text-lg">
                       {file.name}
                     </p>
-                    <p className="mt-1 whitespace-nowrap text-[10px] text-[#9a94a7] sm:text-[11px] lg:text-sm">
+                    <p className="mt-1 whitespace-nowrap text-xs text-[#9a94a7] sm:text-sm lg:text-base">
                       {meta.title} · {isLink ? "링크" : "파일"} · {formatUploadedLabel(file.uploadedBy)} · {file.uploadedAt}
                     </p>
                   </div>
@@ -396,7 +396,7 @@ export function FileTab({
                       title={isActionDisabled ? "삭제 권한이 없습니다." : undefined}
                       onClick={() => void handleDownload(file)}
                       disabled={isActionDisabled || busyFileId === file.id}
-                      className="rounded-full bg-[#f3f7ff] px-3 py-2 text-[11px] font-bold text-[#1e70e6] sm:text-xs lg:text-sm disabled:opacity-60"
+                        className="rounded-full bg-[#f3f7ff] px-3 py-2 text-sm font-bold text-[#1e70e6] sm:px-4 sm:py-2.5 sm:text-base disabled:opacity-60"
                     >
                       {busyFileId === file.id
                         ? "처리 중..."
@@ -409,7 +409,7 @@ export function FileTab({
                         type="button"
                         disabled={isActionDisabled}
                         onClick={() => openEditDialog(file)}
-                        className="min-h-10 rounded-full border border-[#e5e9f2] px-3 py-2 text-[11px] font-semibold text-[#445066] sm:text-xs lg:text-sm disabled:opacity-60"
+                        className="min-h-10 rounded-full border border-[#e5e9f2] px-3 py-2 text-sm font-semibold text-[#445066] sm:px-4 sm:py-2.5 sm:text-base disabled:opacity-60"
                       >
                         편집
                       </button>
@@ -417,7 +417,7 @@ export function FileTab({
                         type="button"
                         disabled={isActionDisabled}
                         onClick={() => openDeleteDialog(file)}
-                        className="min-h-10 rounded-full border border-[#f2d7d7] px-3 py-2 text-[11px] font-semibold text-[#b54d4d] sm:text-xs lg:text-sm disabled:opacity-60"
+                        className="min-h-10 rounded-full border border-[#f2d7d7] px-3 py-2 text-sm font-semibold text-[#b54d4d] sm:px-4 sm:py-2.5 sm:text-base disabled:opacity-60"
                       >
                         삭제
                       </button>

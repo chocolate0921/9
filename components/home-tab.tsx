@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ConfirmedMeeting, Task } from "@/types/carrymate";
 
 type Summary = {
@@ -34,6 +34,163 @@ const analysisPresets = [
   },
 ];
 
+const PRIORITY_LABELS: Record<Task["priority"], string> = {
+  high: "높음",
+  medium: "보통",
+  low: "낮음",
+};
+
+function getTaskComparableDate(task: Task) {
+  if (task.dueAt) {
+    const dueDate = new Date(task.dueAt);
+    if (!Number.isNaN(dueDate.getTime())) {
+      return dueDate;
+    }
+  }
+
+  if (task.dueLabel === "오늘") {
+    const date = new Date();
+    date.setHours(18, 0, 0, 0);
+    return date;
+  }
+
+  if (task.dueLabel === "내일") {
+    const date = new Date();
+    date.setHours(18, 0, 0, 0);
+    date.setDate(date.getDate() + 1);
+    return date;
+  }
+
+  return null;
+}
+
+function getTaskSortRank(task: Task) {
+  if (task.status === "done") {
+    return 4;
+  }
+
+  const dueDate = getTaskComparableDate(task);
+  if (!dueDate) {
+    return 5;
+  }
+
+  const today = new Date();
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const startOfDueDate = new Date(
+    dueDate.getFullYear(),
+    dueDate.getMonth(),
+    dueDate.getDate(),
+  );
+
+  const diffDays = Math.round(
+    (startOfDueDate.getTime() - startOfToday.getTime()) / 86400000,
+  );
+
+  if (diffDays < 0) {
+    return 0;
+  }
+
+  if (diffDays === 0) {
+    return 1;
+  }
+
+  if (diffDays <= 2) {
+    return 2;
+  }
+
+  return 3;
+}
+
+function compareTasksByDeadline(a: Task, b: Task) {
+  const rankDiff = getTaskSortRank(a) - getTaskSortRank(b);
+  if (rankDiff !== 0) {
+    return rankDiff;
+  }
+
+  const aDue = getTaskComparableDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
+  const bDue = getTaskComparableDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
+  if (aDue !== bDue) {
+    return aDue - bDue;
+  }
+
+  const priorityOrder: Record<Task["priority"], number> = {
+    high: 0,
+    medium: 1,
+    low: 2,
+  };
+
+  const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+
+  return a.title.localeCompare(b.title, "ko-KR");
+}
+
+function formatTaskDeadline(task: Task) {
+  const dueDate = getTaskComparableDate(task);
+  if (!dueDate) {
+    if (task.dueLabel && task.dueLabel !== "마감일 없음") {
+      return `${task.dueLabel} · 시간 미설정`;
+    }
+
+    return "마감일 없음 · 시간 미설정";
+  }
+
+  const dateLabel = `${dueDate.getFullYear()}.${String(
+    dueDate.getMonth() + 1,
+  ).padStart(2, "0")}.${String(dueDate.getDate()).padStart(2, "0")}`;
+  const timeLabel = `${String(dueDate.getHours()).padStart(2, "0")}:${String(
+    dueDate.getMinutes(),
+  ).padStart(2, "0")}`;
+
+  return `${dateLabel} · ${timeLabel}`;
+}
+
+function getTaskStatusLabel(task: Task) {
+  if (task.status === "done") {
+    return "완료";
+  }
+
+  const dueDate = getTaskComparableDate(task);
+  if (!dueDate) {
+    return "마감일 없음";
+  }
+
+  const today = new Date();
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const startOfDueDate = new Date(
+    dueDate.getFullYear(),
+    dueDate.getMonth(),
+    dueDate.getDate(),
+  );
+  const diffDays = Math.round(
+    (startOfDueDate.getTime() - startOfToday.getTime()) / 86400000,
+  );
+
+  if (diffDays < 0) {
+    return "연체";
+  }
+
+  if (diffDays === 0) {
+    return "오늘 마감";
+  }
+
+  if (diffDays <= 2) {
+    return "마감 임박";
+  }
+
+  return "미래 마감";
+}
+
 export function HomeTab({
   summary,
   tasks,
@@ -49,9 +206,16 @@ export function HomeTab({
   onJumpToTasks: () => void;
   onJumpToSchedule: () => void;
 }) {
-  const todayItems = tasks
-    .filter((task) => task.dueLabel === "오늘" && task.status !== "done")
-    .slice(0, 3);
+  const sortedTasks = useMemo(
+    () => [...tasks].sort(compareTasksByDeadline),
+    [tasks],
+  );
+  const visibleTasks = sortedTasks.slice(0, 3);
+  const urgentTask =
+    summary.urgentTask ?? sortedTasks.find((task) => task.status !== "done");
+  const priorityLabel = urgentTask
+    ? PRIORITY_LABELS[urgentTask.priority]
+    : "확인 필요";
 
   const [analysisState, setAnalysisState] = useState(() =>
     summary.healthStatus === "risk"
@@ -74,52 +238,88 @@ export function HomeTab({
   };
 
   return (
-    <div className="home-dashboard space-y-4 pb-4">
-      {/* 전체 진행률 */}
-      <section className="rounded-[28px] border border-[#eeeaf8] bg-white px-5 py-7 shadow-[0_10px_30px_rgba(80,63,155,0.08)]">
-        <p className="text-center text-[12px] font-semibold text-[#77718a] sm:text-sm lg:text-base">
-          오늘의 진행률
-        </p>
-
-        <div className="mt-5 flex justify-center">
-          <ProgressCircle progress={summary.progress} />
-        </div>
-      </section>
-
-      {/* 가장 중요한 업무 */}
-      <section className="overflow-hidden rounded-[26px] bg-gradient-to-br from-[#7469f4] to-[#5148df] p-5 text-white shadow-[0_16px_32px_rgba(83,72,220,0.28)]">
-        <div className="flex items-center justify-between">
-          <span className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold">
-            다음 우선순위
-          </span>
-
-          <button
-            type="button"
-            onClick={onJumpToTasks}
-            className="text-[12px] font-semibold text-white/80"
-          >
-            업무 보기
-          </button>
-        </div>
-
-          <h2 className="mt-5 text-[21px] font-bold leading-8 sm:text-[24px] lg:text-[30px]">
-          {summary.urgentTask?.title ?? "오늘의 핵심 업무를 확인해 주세요"}
-        </h2>
-
-        <p className="mt-3 text-[13px] leading-6 text-white/75">
-          {summary.urgentTask
-            ? `${summary.urgentTask.dueLabel}까지 완료해야 하는 중요한 업무입니다.`
-            : "모든 긴급 업무를 완료했어요. 다음 업무를 확인해 보세요."}
-        </p>
-
-        <div className="mt-6 flex items-center justify-between">
-          <div className="flex -space-x-2">
-            <Avatar label="민" />
-            <Avatar label="준" />
-            <Avatar label="서" />
+    <div className="space-y-4 pb-4">
+      {/* 과목별 과제 진행률 */}
+      <section className="rounded-[28px] border border-[#eeeaf8] bg-white px-5 py-6 shadow-[0_10px_30px_rgba(80,63,155,0.08)] sm:px-6 lg:px-7">
+        <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[auto,minmax(0,1fr)] lg:items-center lg:gap-6">
+          <div className="flex justify-center lg:justify-start">
+            <ProgressCircle progress={summary.progress} />
           </div>
 
+          <div className="min-w-0 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[18px] font-extrabold text-[#282438] sm:text-xl lg:text-2xl">
+                과목별 과제 진행률
+              </h2>
 
+              <button
+                type="button"
+                onClick={onJumpToTasks}
+                className="rounded-full bg-[#efedff] px-3 py-1 text-[11px] font-semibold text-[#6259e8] sm:text-xs"
+              >
+                업무 보기
+              </button>
+            </div>
+
+            <p className="break-keep text-[13px] leading-6 text-[#77718a] sm:text-sm lg:text-base">
+              완료 {summary.doneCount}/{summary.totalCount}개 · 진행률{" "}
+              {summary.progress}% · 진행 중 {summary.inProgressCount}개 · 연체{" "}
+              {summary.overdueCount}개
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[20px] bg-[#faf9ff] px-4 py-4">
+                <p className="text-[11px] font-semibold text-[#9a94a8] sm:text-xs">
+                  완료 업무
+                </p>
+                <p className="mt-2 text-[15px] font-bold text-[#2f2a3f] sm:text-base lg:text-lg">
+                  {summary.doneCount}/{summary.totalCount}개
+                </p>
+              </div>
+
+              <div className="rounded-[20px] bg-[#faf9ff] px-4 py-4">
+                <p className="text-[11px] font-semibold text-[#9a94a8] sm:text-xs">
+                  진행률
+                </p>
+                <p className="mt-2 text-[15px] font-bold text-[#2f2a3f] sm:text-base lg:text-lg">
+                  {summary.progress}%
+                </p>
+              </div>
+
+              <div className="rounded-[20px] bg-[#faf9ff] px-4 py-4">
+                <p className="text-[11px] font-semibold text-[#9a94a8] sm:text-xs">
+                  우선순위
+                </p>
+                <p className="mt-2 text-[15px] font-bold text-[#2f2a3f] sm:text-base lg:text-lg">
+                  {priorityLabel}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-[22px] border border-[#eeeaf8] bg-[#faf9ff] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-[#6259e8]">
+                  다음 우선순위
+                </span>
+
+                {urgentTask ? (
+                  <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-[#8a849b]">
+                    {PRIORITY_LABELS[urgentTask.priority]}
+                  </span>
+                ) : null}
+              </div>
+
+              <p className="mt-3 break-keep text-[14px] font-bold leading-6 text-[#2f2a3f] sm:text-base lg:text-[17px]">
+                {urgentTask?.title ?? "오늘의 핵심 업무를 확인해 주세요"}
+              </p>
+
+              <p className="mt-2 break-keep text-[12px] leading-5 text-[#77718a] sm:text-sm lg:text-base">
+                {urgentTask
+                  ? `${formatTaskDeadline(urgentTask)} · ${getTaskStatusLabel(urgentTask)}`
+                  : "모든 긴급 업무를 완료했어요. 다음 업무를 확인해 보세요."}
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -174,12 +374,17 @@ export function HomeTab({
         />
       )}
 
-      {/* 오늘 할 일 */}
+      {/* 마감이 가까운 과제 */}
       <section>
         <div className="mb-3 flex items-center justify-between px-1">
-          <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
-            오늘의 할 일
-          </h3>
+          <div>
+            <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
+              마감이 가까운 과제
+            </h3>
+            <p className="mt-1 text-[11px] text-[#8f89a0] sm:text-xs lg:text-sm">
+              마감일이 가까운 순서로 정렬했어요.
+            </p>
+          </div>
 
           <button
             type="button"
@@ -191,39 +396,83 @@ export function HomeTab({
         </div>
 
         <div className="space-y-2.5">
-          {todayItems.length === 0 ? (
-            <EmptyState text="오늘 예정된 업무를 모두 완료했어요." />
+          {visibleTasks.length === 0 ? (
+            <EmptyState text="등록된 과제가 없어요." />
           ) : (
-            todayItems.map((task) => (
-              <button
-                key={task.id}
-                type="button"
-                onClick={onJumpToTasks}
-                className="flex w-full items-center gap-3 rounded-[20px] border border-[#eeeaf7] bg-white px-4 py-4 text-left shadow-[0_7px_20px_rgba(64,52,115,0.07)]"
-              >
-                <span
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                    task.status === "inProgress"
-                      ? "bg-[#eeeaff] text-[#6259e8]"
-                      : "bg-[#f6f4fb] text-[#aaa5b8]"
-                  }`}
+            visibleTasks.map((task) => {
+              const statusLabel = getTaskStatusLabel(task);
+
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={onJumpToTasks}
+                  className="flex w-full flex-col gap-3 rounded-[20px] border border-[#eeeaf7] bg-white px-4 py-4 text-left shadow-[0_7px_20px_rgba(64,52,115,0.07)] sm:flex-row sm:items-center"
                 >
-                  {task.status === "inProgress" ? "◔" : "✓"}
-                </span>
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <span
+                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                        task.status === "inProgress"
+                          ? "bg-[#eeeaff] text-[#6259e8]"
+                          : task.status === "done"
+                            ? "bg-[#f2f0f7] text-[#8a849b]"
+                            : "bg-[#f6f4fb] text-[#aaa5b8]"
+                      }`}
+                    >
+                      {task.status === "inProgress"
+                        ? "◔"
+                        : task.status === "done"
+                          ? "✓"
+                          : "•"}
+                    </span>
 
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 break-words text-[13px] font-bold text-[#343044] sm:text-sm lg:text-base">
-                    {task.title}
-                  </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 break-words text-[13px] font-bold text-[#343044] sm:text-sm lg:text-base">
+                        {task.title}
+                      </p>
 
-                  <p className="mt-1 whitespace-nowrap text-[11px] text-[#9993a7] sm:text-xs">
-                    {task.status === "inProgress" ? "진행 중" : "오늘 마감"}
-                  </p>
-                </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            statusLabel === "연체"
+                              ? "bg-[#fff0f2] text-[#d83352]"
+                              : statusLabel === "오늘 마감"
+                                ? "bg-[#fff4e6] text-[#d9821b]"
+                                : statusLabel === "마감 임박"
+                                  ? "bg-[#f0eeff] text-[#6259e8]"
+                                  : statusLabel === "완료"
+                                    ? "bg-[#f2f0f7] text-[#7e7892]"
+                                    : "bg-[#f6f4fb] text-[#8b86a0]"
+                          }`}
+                        >
+                          {statusLabel}
+                        </span>
 
-                <span className="text-lg text-[#aba5bb]">⋮</span>
-              </button>
-            ))
+                        <span className="rounded-full bg-[#faf9ff] px-2.5 py-1 text-[11px] font-semibold text-[#8b86a0]">
+                          우선순위 {PRIORITY_LABELS[task.priority]}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 break-keep text-[11px] text-[#9993a7] sm:text-xs">
+                        {formatTaskDeadline(task)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 sm:ml-auto sm:min-w-[160px] sm:flex-col sm:items-end sm:justify-center">
+                    <p className="text-[11px] text-[#9993a7] sm:text-xs">
+                      {task.status === "inProgress"
+                        ? "진행 중"
+                        : task.status === "done"
+                          ? "완료"
+                          : "대기"}
+                    </p>
+
+                    <span className="text-lg text-[#aba5bb]">⋮</span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </section>
@@ -232,7 +481,7 @@ export function HomeTab({
       {todayMeetings.length > 0 && (
         <section>
           <div className="mb-3 flex items-center justify-between px-1">
-          <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
+            <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
               오늘의 일정
             </h3>
 
@@ -324,14 +573,6 @@ function ProgressCircle({ progress }: { progress: number }) {
         </span>
       </div>
     </div>
-  );
-}
-
-function Avatar({ label }: { label: string }) {
-  return (
-    <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#665cf0] bg-[#f6d9bd] text-[10px] font-bold text-[#4f423b]">
-      {label}
-    </span>
   );
 }
 
@@ -437,4 +678,3 @@ function EmptyState({ text }: { text: string }) {
     </div>
   );
 }
-

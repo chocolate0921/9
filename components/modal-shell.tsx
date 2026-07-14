@@ -74,8 +74,8 @@ export function ModalShell({
 
   const headerTitleClass =
     tone === "dark"
-      ? "text-lg sm:text-xl font-semibold text-white"
-      : titleClassName ?? "text-base sm:text-lg font-semibold text-ink";
+      ? "text-xl sm:text-2xl font-semibold text-white"
+      : titleClassName ?? "text-lg sm:text-xl lg:text-2xl font-semibold text-ink";
 
   return (
     <div
@@ -96,12 +96,12 @@ export function ModalShell({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full bg-canvas px-3 py-2 text-sm font-medium text-muted"
+            className="rounded-full bg-canvas px-3 py-2 text-sm font-medium text-muted sm:px-4 sm:py-2.5 sm:text-base"
             >
               닫기
             </button>
           </div>
-          <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 ${actionsClassName ?? ""}`}>
+          <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5 ${actionsClassName ?? ""}`}>
             {children}
           </div>
         </div>

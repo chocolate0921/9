@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { ModalShell } from "@/components/modal-shell";
+import { CarryMateLogo } from "@/components/carrymate-logo";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
 import { MeetingRoomSheet } from "@/components/meeting-room-sheet";
@@ -339,6 +340,8 @@ export function CarryMateApp({
   const [user, setUser] = useState<User | null>(null);
   const [currentMember, setCurrentMember] = useState<TeamMember | null>(null);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+  const [isSplashVisible, setIsSplashVisible] = useState(true);
   const [unlinkedMemberRows, setUnlinkedMemberRows] = useState<TeamMemberRow[]>([]);
   const [isTaskCreating, setIsTaskCreating] = useState(false);
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
@@ -554,6 +557,16 @@ export function CarryMateApp({
     return () => {
       cancelled = true;
       subscription?.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIsSplashVisible(false);
+    }, 1300);
+
+    return () => {
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -2705,13 +2718,52 @@ export function CarryMateApp({
     );
   };
 
+  const renderMyPageModal = () => {
+    if (!isMyPageOpen || !authenticatedUser) {
+      return null;
+    }
+
+    return (
+      <ModalShell title="마이페이지" onClose={() => setIsMyPageOpen(false)}>
+        <div className="space-y-4">
+          <div className="rounded-[22px] border border-line bg-canvas px-4 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand sm:text-sm">
+              내 정보
+            </p>
+            <div className="mt-3 space-y-2 text-sm leading-6 text-ink sm:text-base">
+              <p className="break-keep font-semibold">닉네임: {userNickname || "미설정"}</p>
+              <p className="break-all text-muted">
+                이메일: {authenticatedUser.email || "이메일 정보 없음"}
+              </p>
+              <p className="font-medium text-muted">
+                현재 소속 팀 수: {myTeams.length}개
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsMyPageOpen(false);
+              void handleSignOut();
+            }}
+            className="w-full rounded-2xl bg-brand px-4 py-4 text-sm font-semibold text-white shadow-brand sm:text-base"
+          >
+            로그아웃
+          </button>
+        </div>
+      </ModalShell>
+    );
+  };
+
+  if (isSplashVisible) {
+    return <SplashScreen />;
+  }
+
   if (isRestoringWorkspace) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-10 pt-7">
         <div className="rounded-[2rem] border border-line bg-white p-6 shadow-soft">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand">
-            CarryMate
-          </p>
+          <CarryMateLogo variant="full" size="sm" className="text-brand" />
           <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.02em] text-ink">
             마지막 팀을 확인하는 중입니다
           </h1>
@@ -2750,6 +2802,7 @@ export function CarryMateApp({
           isLoading={myTeamsLoading || isWorkspaceLoading}
           message={workspaceLoadMessage || myTeamsMessage}
           teams={myTeams}
+          isEnteringTeam={isWorkspaceLoading}
           onEnterTeam={(summary) => {
             void loadWorkspaceFromTeamId({
               source: "card",
@@ -2768,39 +2821,45 @@ export function CarryMateApp({
 
   return (
     <>
-      <main className="carrymate-workspace mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:px-6 lg:px-8">
-        <header className="carrymate-header mb-6 rounded-[28px] p-5 sm:p-6">
-          <div className="grid min-h-[92px] grid-cols-[56px,minmax(0,1fr),auto] items-start gap-3">
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 pb-[calc(env(safe-area-inset-bottom)+5rem)] pt-3 sm:px-4 lg:px-6">
+        <header className="sticky top-0 z-40 mb-4 rounded-[2rem] border border-line bg-white/95 p-4 shadow-soft backdrop-blur-md">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 md:grid-cols-[minmax(180px,1fr)_minmax(420px,auto)_minmax(180px,1fr)] lg:grid-cols-[minmax(220px,1fr)_minmax(560px,auto)_minmax(220px,1fr)]">
             <button
               ref={menuButtonRef}
               type="button"
               aria-label="메뉴 열기"
               aria-expanded={isMenuOpen}
               onClick={() => setIsMenuOpen((current) => !current)}
-              className="neu-icon-button flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-semibold text-ink"
+              className="justify-self-start flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-lg font-semibold text-ink shadow-soft md:h-12 md:w-12 lg:h-[52px] lg:w-[52px]"
             >
               ☰
             </button>
 
-            <div className="min-w-0 text-center">
-              <p className="truncate text-[11px] font-bold uppercase tracking-[0.28em] text-brand sm:text-xs">
-                CarryMate
-              </p>
-              <h1 className="mt-1 truncate text-[20px] font-bold tracking-[-0.03em] text-ink sm:text-[26px] lg:text-[32px]">
+            <div className="min-w-0 justify-self-center text-center md:min-w-[420px] lg:min-w-[560px]">
+              <button
+                type="button"
+                aria-label="CarryMate 홈으로 이동"
+                onClick={() => setActiveTab("home")}
+                className="mx-auto inline-flex items-center justify-center"
+              >
+                <CarryMateLogo variant="symbol" size="sm" className="md:hidden" priority />
+                <CarryMateLogo variant="full" size="lg" className="hidden md:inline-flex" priority />
+              </button>
+              <h1 className="mt-1 truncate text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[27px] lg:text-[32px]">
                 {project.name}
               </h1>
-              <p className="mt-1 truncate text-[12px] text-muted sm:text-[13px] lg:text-sm">
+              <p className="mt-1 truncate text-[13px] text-muted sm:text-sm lg:text-base">
                 {project.courseName} · {project.deadlineLabel}
               </p>
             </div>
 
-            <div className="flex min-w-0 items-start justify-end">
+            <div className="flex min-w-0 flex-col items-end justify-self-end gap-2">
               {isAuthenticated ? (
                 activeTab === "home" ? null : activeTab === "tasks" ? (
                   <button
                     type="button"
                     onClick={() => openSheet("task")}
-                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
+                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
                     aria-label="업무 추가"
                   >
                     + 업무 추가
@@ -2809,7 +2868,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={() => openSheet("meeting")}
-                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
+                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
                     aria-label="회의 만들기"
                   >
                     + 회의 만들기
@@ -2818,21 +2877,13 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={openFileCreateDialog}
-                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
+                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
                     aria-label="자료 추가"
                   >
                     + 자료 추가
                   </button>
                 )
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openAuthSheet("signIn")}
-                  className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
-                >
-                  로그인
-                </button>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -2862,11 +2913,48 @@ export function CarryMateApp({
                     className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
                   >
                     내 팀원 정보 연결
-                  </button>
+                    </button>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={() => setIsMyPageOpen(true)}
+                  className="whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink sm:text-xs"
+                >
+                  마이페이지
+                </button>
               </>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                onClick={() => openAuthSheet("signIn")}
+                className="whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink sm:text-xs"
+              >
+                로그인
+              </button>
+            )}
           </div>
+          <nav className="mt-4 hidden items-center justify-center gap-2 md:flex lg:gap-3">
+            {[
+              { id: "home", label: "홈" },
+              { id: "tasks", label: "업무" },
+              { id: "schedule", label: "일정" },
+              { id: "files", label: "파일" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as TabId)}
+                aria-current={activeTab === tab.id ? "page" : undefined}
+                className={`inline-flex min-h-[52px] min-w-[92px] items-center justify-center whitespace-nowrap rounded-2xl border px-6 py-3 text-[15px] font-semibold tracking-[-0.01em] transition duration-200 lg:min-h-[56px] lg:min-w-[104px] lg:px-7 lg:py-3.5 lg:text-lg ${
+                  activeTab === tab.id
+                    ? "border-[#d8d2fb] bg-white text-brand shadow-soft"
+                    : "border-transparent bg-[#fbfbfe] text-[#717588] hover:border-line hover:bg-white hover:text-ink"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
           {authMessage ? (
             <p className="mt-3 rounded-2xl bg-canvas px-4 py-3 text-[12px] font-medium text-muted">
               {authMessage}
@@ -2894,7 +2982,7 @@ export function CarryMateApp({
           ) : null}
         </header>
 
-        <section className="min-w-0 flex-1 space-y-6">
+        <section className="min-w-0 flex-1 space-y-4">
           {activeTab === "home" && (
             <HomeTab
               summary={summary}
@@ -2961,7 +3049,9 @@ export function CarryMateApp({
           )}
         </section>
 
-        <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
+        <div className="md:hidden">
+          <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
+        </div>
       </main>
 
       {typeof document !== "undefined" && viewMode === "workspace" && !isAssistantOpen
@@ -2970,9 +3060,9 @@ export function CarryMateApp({
               type="button"
               aria-label="CarryMate AI 열기"
               onClick={() => setIsAssistantOpen(true)}
-              className="neu-ai-button fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+7rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full text-white transition hover:scale-[1.04] active:scale-[0.97] sm:right-8 sm:bottom-8"
+              className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-[#cad7fb] bg-white text-brand shadow-[0_14px_34px_rgba(30,112,230,0.18)] transition hover:scale-[1.04] hover:shadow-[0_18px_38px_rgba(30,112,230,0.24)] active:scale-[0.98] sm:right-6 sm:bottom-6"
             >
-              <AiSparkIcon />
+              <CarryMateLogo variant="symbol" size="sm" decorative />
             </button>,
             document.body,
           )
@@ -3017,6 +3107,7 @@ export function CarryMateApp({
       ) : null}
 
       {renderWorkspaceSheet()}
+      {renderMyPageModal()}
       {isAssistantOpen ? (
         <TeamAssistantPanel
           open={isAssistantOpen}
@@ -3108,12 +3199,9 @@ function OnboardingScreen({
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
       <section className="rounded-[2rem] border border-line bg-white/92 p-6 shadow-soft">
         <div className="rounded-[1.75rem] border border-line bg-white p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-            CarryMate
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-ink">캐리메이트</h1>
-          <p className="mt-3 text-[15px] leading-7 text-muted">
-            신입생 팀플을 더 쉽게 정리하는 AI 협업 도우미
+          <CarryMateLogo variant="full" size="lg" priority className="justify-start" />
+          <p className="mt-4 text-[15px] leading-7 text-muted">
+            AI와 함께하는 대학생 팀 프로젝트 플랫폼
           </p>
         </div>
 
@@ -3210,6 +3298,7 @@ function OnboardingScreen({
 function MyTeamsSection({
   isAuthenticated,
   isLoading,
+  isEnteringTeam,
   message,
   onEnterTeam,
   onLeaveTeam,
@@ -3218,6 +3307,7 @@ function MyTeamsSection({
 }: {
   isAuthenticated: boolean;
   isLoading: boolean;
+  isEnteringTeam: boolean;
   message: string;
   onEnterTeam: (summary: ProfileTeamSummary) => void;
   onLeaveTeam: (summary: ProfileTeamSummary) => Promise<{ ok: boolean; message: string }>;
@@ -3241,6 +3331,14 @@ function MyTeamsSection({
     setDialogState({ kind: "none" });
     setDialogMessage("");
     setIsSubmitting(false);
+  };
+
+  const handleEnterTeam = (summary: ProfileTeamSummary) => {
+    if (isLoading || isEnteringTeam) {
+      return;
+    }
+
+    onEnterTeam(summary);
   };
 
   return (
@@ -3267,7 +3365,21 @@ function MyTeamsSection({
             teams.map((summary) => (
               <div
                 key={summary.member.id}
-                className="rounded-2xl border border-line bg-white px-4 py-4 shadow-soft"
+                role="button"
+                tabIndex={isLoading || isEnteringTeam ? -1 : 0}
+                aria-disabled={isLoading || isEnteringTeam}
+                onClick={() => handleEnterTeam(summary)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    handleEnterTeam(summary);
+                  }
+                }}
+                className={`rounded-2xl border border-line bg-white px-4 py-4 shadow-soft transition ${
+                  isLoading || isEnteringTeam
+                    ? "cursor-not-allowed opacity-70"
+                    : "cursor-pointer hover:-translate-y-0.5 hover:shadow-md"
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -3283,19 +3395,28 @@ function MyTeamsSection({
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     <button
                       type="button"
-                      onClick={() => onEnterTeam(summary)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleEnterTeam(summary);
+                      }}
                       className="rounded-xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                      disabled={isLoading || isEnteringTeam}
                     >
                       들어가기
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (isLoading || isEnteringTeam) {
+                          return;
+                        }
                         setMenuTeamId((current) =>
                           current === summary.team.id ? null : summary.team.id,
-                        )
-                      }
+                        );
+                      }}
                       className="rounded-xl border border-line bg-white px-3 py-2 text-[12px] font-semibold text-muted"
+                      disabled={isLoading || isEnteringTeam}
                     >
                       더보기
                     </button>
@@ -3304,7 +3425,8 @@ function MyTeamsSection({
                         {summary.member.is_leader ? null : (
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setMenuTeamId(null);
                               setDialogState({ kind: "leave", summary });
                             }}
@@ -3316,7 +3438,8 @@ function MyTeamsSection({
                         {summary.member.is_leader ? (
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setMenuTeamId(null);
                               setDialogState({ kind: "delete", summary });
                             }}
@@ -3421,14 +3544,25 @@ function TeamActionModal({
   );
 }
 
-function AiSparkIcon() {
+function SplashScreen() {
   return (
-    <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 2.5a1 1 0 0 1 .93.63l1.57 3.91 3.91 1.57a1 1 0 0 1 0 1.86l-3.91 1.57-1.57 3.91a1 1 0 0 1-1.86 0l-1.57-3.91-3.91-1.57a1 1 0 0 1 0-1.86l3.91-1.57 1.57-3.91A1 1 0 0 1 12 2.5Zm0 6.41-.77 1.93a1 1 0 0 1-.56.56l-1.93.77 1.93.77a1 1 0 0 1 .56.56l.77 1.93.77-1.93a1 1 0 0 1 .56-.56l1.93-.77-1.93-.77a1 1 0 0 1-.56-.56L12 8.91Z"
-      />
-    </svg>
+    <div
+      className="flex min-h-screen items-center justify-center px-6 py-10"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="flex w-full max-w-sm flex-col items-center rounded-[32px] border border-line bg-white px-8 py-10 text-center shadow-soft sm:px-10 sm:py-12">
+        <CarryMateLogo variant="full" size="xl" priority className="justify-center" />
+        <p className="mt-5 text-sm leading-6 text-muted sm:text-base">
+          AI와 함께하는 대학생 팀 프로젝트 플랫폼
+        </p>
+        <div className="mt-6 flex items-center gap-2 text-brand motion-reduce:animate-none">
+          <span className="h-2.5 w-2.5 rounded-full bg-brand animate-pulse motion-reduce:animate-none" />
+          <span className="h-2.5 w-2.5 rounded-full bg-brand/70 animate-pulse motion-reduce:animate-none [animation-delay:120ms]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-brand/40 animate-pulse motion-reduce:animate-none [animation-delay:240ms]" />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3476,13 +3610,11 @@ function WorkspaceDrawer({
         className="absolute left-0 top-0 flex h-full w-[min(88vw,20rem)] max-w-[20rem] flex-col border-r border-line bg-white p-4 shadow-[20px_0_50px_rgba(15,23,42,0.15)]"
       >
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand sm:text-xs">
+          <div className="min-w-0">
+            <CarryMateLogo variant="full" size="md" priority />
+            <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand sm:text-xs">
               Menu
             </p>
-            <h2 id="workspace-drawer-title" className="mt-1 text-lg font-semibold text-ink">
-              메뉴
-            </h2>
           </div>
           <button
             type="button"
@@ -3498,7 +3630,7 @@ function WorkspaceDrawer({
             title="현재 팀 정보"
             description={
               currentTeam
-                ? `${currentTeam.team.team_name}\n${currentTeam.team.course_name}`
+                ? `${currentTeam.team.team_name}\n${currentTeam.team.course_name}\n현재 역할: ${currentTeam.member.role}${currentTeam.member.is_leader ? " · 팀장" : ""}`
                 : "현재 팀 정보를 불러올 수 없습니다."
             }
           />

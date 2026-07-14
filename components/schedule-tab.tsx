@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   ConfirmedMeeting,
   ScheduleSlot,
@@ -789,20 +789,20 @@ export function ScheduleTab({
       </div>
 
       <SectionTitle title="팀 회의 규칙" />
-      <section className="space-y-3 rounded-[22px] bg-white p-4 shadow-card">
+      <section className="space-y-3 rounded-[22px] bg-white p-4 shadow-card sm:p-5">
         <div className="flex gap-2">
           <input
             type="text"
             value={ruleInput}
             onChange={(event) => setRuleInput(event.target.value)}
             placeholder="회의 규칙을 추가해보세요."
-            className="flex-1 rounded-2xl border border-line bg-white px-4 py-3 text-[12px] outline-none transition focus:border-brand"
+            className="flex-1 rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none transition placeholder:text-muted focus:border-brand sm:text-base"
           />
           <button
             type="button"
             onClick={handleAddRule}
             disabled={!ruleInput.trim()}
-            className="rounded-2xl bg-[#6259e8] px-4 py-3 text-[11px] font-bold text-white disabled:opacity-60"
+            className="rounded-2xl bg-[#6259e8] px-4 py-3 text-sm font-bold text-white disabled:opacity-60 sm:text-base"
           >
             추가
           </button>
@@ -815,85 +815,89 @@ export function ScheduleTab({
             return (
               <div
                 key={rule.id}
-                className="rounded-2xl bg-[#faf9ff] px-3 py-3"
+                className="rounded-2xl bg-[#faf9ff] px-4 py-4 shadow-[0_4px_14px_rgba(67,55,120,0.04)] sm:px-5 sm:py-4"
               >
-                <div className="flex items-start gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRules((current) =>
-                        current.map((item) =>
-                          item.id === rule.id ? { ...item, checked: !item.checked } : item,
-                        ),
-                      )
-                    }
-                    className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-md"
-                  >
-                    <span
-                      className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] ${
-                        rule.checked
-                          ? "bg-[#6259e8] text-white"
-                          : "border border-[#dcd7e8] text-transparent"
-                      }`}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRules((current) =>
+                          current.map((item) =>
+                            item.id === rule.id ? { ...item, checked: !item.checked } : item,
+                          ),
+                        )
+                      }
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md sm:h-8 sm:w-8"
                     >
-                      ✓
-                    </span>
-                  </button>
+                      <span
+                        className={`flex h-7 w-7 items-center justify-center rounded-md text-[11px] sm:h-8 sm:w-8 sm:text-[12px] ${
+                          rule.checked
+                            ? "bg-[#6259e8] text-white"
+                            : "border border-[#dcd7e8] text-transparent"
+                        }`}
+                      >
+                        ✓
+                      </span>
+                    </button>
 
-                  <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editingRuleText}
+                          onChange={(event) => setEditingRuleText(event.target.value)}
+                          className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none transition placeholder:text-muted focus:border-brand sm:text-base"
+                        />
+                      ) : (
+                        <p className="break-keep whitespace-normal text-[14px] font-medium leading-6 text-[#5d5768] sm:text-[15px] lg:text-[16px]">
+                          {rule.text}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center justify-end gap-2 self-end sm:ml-auto sm:self-center sm:gap-3">
                     {isEditing ? (
-                      <input
-                        type="text"
-                        value={editingRuleText}
-                        onChange={(event) => setEditingRuleText(event.target.value)}
-                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-[12px] outline-none transition focus:border-brand"
-                      />
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingRuleId(null);
+                            setEditingRuleText("");
+                          }}
+                          className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold text-[#8a8397]"
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveRule(rule.id)}
+                          disabled={!editingRuleText.trim()}
+                          className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold text-[#6259e8] disabled:opacity-60"
+                        >
+                          저장
+                        </button>
+                      </>
                     ) : (
-                      <p className="text-[11px] font-semibold text-[#5d5768]">{rule.text}</p>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditRule(rule)}
+                          className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold text-[#6259e8]"
+                        >
+                          ✏ 수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRule(rule.id)}
+                          className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold text-rose-500"
+                        >
+                          삭제
+                        </button>
+                      </>
                     )}
                   </div>
-                </div>
-
-                <div className="mt-3 flex justify-end gap-2">
-                  {isEditing ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingRuleId(null);
-                          setEditingRuleText("");
-                        }}
-                        className="rounded-full px-3 py-1 text-[10px] font-bold text-[#8a8397]"
-                      >
-                        취소
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveRule(rule.id)}
-                        disabled={!editingRuleText.trim()}
-                        className="rounded-full px-3 py-1 text-[10px] font-bold text-[#6259e8] disabled:opacity-60"
-                      >
-                        저장
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleStartEditRule(rule)}
-                        className="rounded-full px-3 py-1 text-[10px] font-bold text-[#6259e8]"
-                      >
-                        ✏ 수정
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRule(rule.id)}
-                        className="rounded-full px-3 py-1 text-[10px] font-bold text-rose-500"
-                      >
-                        삭제
-                      </button>
-                    </>
-                  )}
                 </div>
               </div>
             );
@@ -943,15 +947,13 @@ function PeriodRow({
         const isAnchor =
           rangeAnchor?.dayIndex === dayIndex && rangeAnchor.periodIndex === periodIndex;
 
-        let className = "border-[#e7e2f0] bg-white text-[#938ca1]";
-
-        if (isSelected) {
-          className = "border-emerald-500 bg-emerald-500 text-white";
-        } else if (isRecommended) {
-          className = "border-[#6259e8] bg-[#6259e8] text-white";
-        } else if (count > 0) {
-          className = "border-blue-200 bg-blue-100 text-blue-700";
-        }
+        const cellStateClass = isSelected
+          ? "border-emerald-700 bg-emerald-600 text-white shadow-[inset_0_0_0_1px_rgba(6,95,70,0.15)]"
+          : isRecommended
+            ? "border-[#6259e8] bg-violet-50 text-[#4f46e5]"
+            : count > 0
+              ? "border-blue-200 bg-blue-50 text-blue-700"
+              : "border-[#e7e2f0] bg-white text-[#938ca1]";
 
         return (
           <button
@@ -961,9 +963,9 @@ function PeriodRow({
             onClick={() => onClick(dayIndex, periodIndex)}
             aria-pressed={isSelected}
             aria-label={`${DAY_LABELS[dayIndex]} ${period.label} 공강 선택`}
-            className={`relative flex min-h-[52px] items-center justify-center bg-white text-[10px] font-extrabold transition sm:text-[11px] ${className} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
+            className={`relative flex min-h-[52px] items-center justify-center text-[10px] font-extrabold transition sm:text-[11px] ${cellStateClass} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
           >
-            {isSelected ? "" : isRecommended ? "★" : count > 0 ? count : ""}
+            {isSelected ? "✓" : isRecommended ? "★" : count > 0 ? count : ""}
             {isSelected && isRecommended ? (
               <span className="absolute right-1 top-1 text-[9px] text-white">★</span>
             ) : null}
