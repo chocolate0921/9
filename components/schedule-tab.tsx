@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ConfirmedMeeting,
   ScheduleSlot,
@@ -789,20 +789,20 @@ export function ScheduleTab({
       </div>
 
       <SectionTitle title="팀 회의 규칙" />
-      <section className="space-y-3 rounded-[22px] bg-white p-4 shadow-card sm:p-5">
+      <section className="space-y-3 rounded-[22px] bg-white p-4 shadow-card">
         <div className="flex gap-2">
           <input
             type="text"
             value={ruleInput}
             onChange={(event) => setRuleInput(event.target.value)}
             placeholder="회의 규칙을 추가해보세요."
-            className="flex-1 rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none transition placeholder:text-muted focus:border-brand sm:text-base"
+            className="flex-1 rounded-2xl border border-line bg-white px-4 py-3 text-[12px] outline-none transition focus:border-brand"
           />
           <button
             type="button"
             onClick={handleAddRule}
             disabled={!ruleInput.trim()}
-            className="rounded-2xl bg-[#6259e8] px-4 py-3 text-sm font-bold text-white disabled:opacity-60 sm:text-base"
+            className="rounded-2xl bg-[#6259e8] px-4 py-3 text-[11px] font-bold text-white disabled:opacity-60"
           >
             추가
           </button>
@@ -815,7 +815,7 @@ export function ScheduleTab({
             return (
               <div
                 key={rule.id}
-                className="rounded-2xl bg-[#faf9ff] px-4 py-4 shadow-[0_4px_14px_rgba(67,55,120,0.04)] sm:px-5 sm:py-4"
+                className="rounded-2xl bg-[#faf9ff] px-3 py-3"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                   <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -947,13 +947,15 @@ function PeriodRow({
         const isAnchor =
           rangeAnchor?.dayIndex === dayIndex && rangeAnchor.periodIndex === periodIndex;
 
-        const cellStateClass = isSelected
-          ? "border-emerald-700 bg-emerald-600 text-white shadow-[inset_0_0_0_1px_rgba(6,95,70,0.15)]"
-          : isRecommended
-            ? "border-[#6259e8] bg-violet-50 text-[#4f46e5]"
-            : count > 0
-              ? "border-blue-200 bg-blue-50 text-blue-700"
-              : "border-[#e7e2f0] bg-white text-[#938ca1]";
+        let className = "border-[#e7e2f0] bg-white text-[#938ca1]";
+
+        if (isSelected) {
+          className = "border-emerald-500 bg-emerald-500 text-white";
+        } else if (isRecommended) {
+          className = "border-[#6259e8] bg-[#6259e8] text-white";
+        } else if (count > 0) {
+          className = "border-blue-200 bg-blue-100 text-blue-700";
+        }
 
         return (
           <button
@@ -963,7 +965,7 @@ function PeriodRow({
             onClick={() => onClick(dayIndex, periodIndex)}
             aria-pressed={isSelected}
             aria-label={`${DAY_LABELS[dayIndex]} ${period.label} 공강 선택`}
-            className={`relative flex min-h-[52px] items-center justify-center text-[10px] font-extrabold transition sm:text-[11px] ${cellStateClass} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
+            className={`relative flex min-h-[52px] items-center justify-center bg-white text-[10px] font-extrabold transition sm:text-[11px] ${className} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
           >
             {isSelected ? "✓" : isRecommended ? "★" : count > 0 ? count : ""}
             {isSelected && isRecommended ? (

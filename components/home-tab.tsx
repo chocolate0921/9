@@ -481,7 +481,7 @@ export function HomeTab({
       {todayMeetings.length > 0 && (
         <section>
           <div className="mb-3 flex items-center justify-between px-1">
-            <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
+          <h3 className="text-[16px] font-bold text-[#252236] sm:text-lg lg:text-xl">
               오늘의 일정
             </h3>
 

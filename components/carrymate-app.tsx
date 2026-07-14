@@ -1,10 +1,9 @@
-﻿"use client";
+"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { ModalShell } from "@/components/modal-shell";
 import { CarryMateLogo } from "@/components/carrymate-logo";
 import { FileTab } from "@/components/file-tab";
@@ -2763,7 +2762,9 @@ export function CarryMateApp({
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-10 pt-7">
         <div className="rounded-[2rem] border border-line bg-white p-6 shadow-soft">
-          <CarryMateLogo variant="full" size="sm" className="text-brand" />
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand">
+            CarryMate
+          </p>
           <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.02em] text-ink">
             마지막 팀을 확인하는 중입니다
           </h1>
@@ -2821,16 +2822,16 @@ export function CarryMateApp({
 
   return (
     <>
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 pb-[calc(env(safe-area-inset-bottom)+5rem)] pt-3 sm:px-4 lg:px-6">
-        <header className="sticky top-0 z-40 mb-4 rounded-[2rem] border border-line bg-white/95 p-4 shadow-soft backdrop-blur-md">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 md:grid-cols-[minmax(180px,1fr)_minmax(420px,auto)_minmax(180px,1fr)] lg:grid-cols-[minmax(220px,1fr)_minmax(560px,auto)_minmax(220px,1fr)]">
+      <main className="carrymate-workspace mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:px-6 lg:px-8">
+        <header className="carrymate-header mb-6 rounded-[28px] p-5 sm:p-6">
+          <div className="relative grid min-h-[92px] grid-cols-[56px,minmax(0,1fr),56px] items-start gap-3">
             <button
               ref={menuButtonRef}
               type="button"
               aria-label="메뉴 열기"
               aria-expanded={isMenuOpen}
               onClick={() => setIsMenuOpen((current) => !current)}
-              className="justify-self-start flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-lg font-semibold text-ink shadow-soft md:h-12 md:w-12 lg:h-[52px] lg:w-[52px]"
+              className="neu-icon-button flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-semibold text-ink"
             >
               ☰
             </button>
@@ -2848,18 +2849,18 @@ export function CarryMateApp({
               <h1 className="mt-1 truncate text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[27px] lg:text-[32px]">
                 {project.name}
               </h1>
-              <p className="mt-1 truncate text-[13px] text-muted sm:text-sm lg:text-base">
+              <p className="mt-1 truncate text-[12px] text-muted sm:text-[13px] lg:text-sm">
                 {project.courseName} · {project.deadlineLabel}
               </p>
             </div>
 
-            <div className="flex min-w-0 flex-col items-end justify-self-end gap-2">
+            <div className="flex min-w-0 flex-col items-end gap-2">
               {isAuthenticated ? (
                 activeTab === "home" ? null : activeTab === "tasks" ? (
                   <button
                     type="button"
                     onClick={() => openSheet("task")}
-                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                     aria-label="업무 추가"
                   >
                     + 업무 추가
@@ -2868,7 +2869,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={() => openSheet("meeting")}
-                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                     aria-label="회의 만들기"
                   >
                     + 회의 만들기
@@ -2877,7 +2878,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={openFileCreateDialog}
-                    className="rounded-2xl bg-brand px-3 py-2 text-[12px] font-semibold text-white shadow-brand"
+                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
                     aria-label="자료 추가"
                   >
                     + 자료 추가
@@ -2927,13 +2928,13 @@ export function CarryMateApp({
               <button
                 type="button"
                 onClick={() => openAuthSheet("signIn")}
-                className="whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink sm:text-xs"
+                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
               >
                 로그인
               </button>
             )}
           </div>
-          <nav className="mt-4 hidden items-center justify-center gap-2 md:flex lg:gap-3">
+          <nav className="mt-4 grid grid-cols-4 gap-2 lg:gap-3">
             {[
               { id: "home", label: "홈" },
               { id: "tasks", label: "업무" },
@@ -2945,7 +2946,7 @@ export function CarryMateApp({
                 type="button"
                 onClick={() => setActiveTab(tab.id as TabId)}
                 aria-current={activeTab === tab.id ? "page" : undefined}
-                className={`inline-flex min-h-[52px] min-w-[92px] items-center justify-center whitespace-nowrap rounded-2xl border px-6 py-3 text-[15px] font-semibold tracking-[-0.01em] transition duration-200 lg:min-h-[56px] lg:min-w-[104px] lg:px-7 lg:py-3.5 lg:text-lg ${
+                className={`inline-flex min-h-[46px] min-w-0 items-center justify-center whitespace-nowrap rounded-2xl border px-2 py-2.5 text-[12px] font-semibold tracking-[-0.01em] transition duration-200 sm:text-sm lg:min-h-[56px] lg:px-7 lg:py-3.5 lg:text-lg ${
                   activeTab === tab.id
                     ? "border-[#d8d2fb] bg-white text-brand shadow-soft"
                     : "border-transparent bg-[#fbfbfe] text-[#717588] hover:border-line hover:bg-white hover:text-ink"
@@ -2982,7 +2983,7 @@ export function CarryMateApp({
           ) : null}
         </header>
 
-        <section className="min-w-0 flex-1 space-y-4">
+        <section className="min-w-0 flex-1 space-y-6">
           {activeTab === "home" && (
             <HomeTab
               summary={summary}
@@ -3049,9 +3050,6 @@ export function CarryMateApp({
           )}
         </section>
 
-        <div className="md:hidden">
-          <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
-        </div>
       </main>
 
       {typeof document !== "undefined" && viewMode === "workspace" && !isAssistantOpen
@@ -3060,7 +3058,7 @@ export function CarryMateApp({
               type="button"
               aria-label="CarryMate AI 열기"
               onClick={() => setIsAssistantOpen(true)}
-              className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-[#cad7fb] bg-white text-brand shadow-[0_14px_34px_rgba(30,112,230,0.18)] transition hover:scale-[1.04] hover:shadow-[0_18px_38px_rgba(30,112,230,0.24)] active:scale-[0.98] sm:right-6 sm:bottom-6"
+              className="neu-ai-button fixed right-5 bottom-5 z-[80] flex h-14 w-14 items-center justify-center rounded-full text-white transition hover:scale-[1.04] active:scale-[0.97] sm:right-8 sm:bottom-8"
             >
               <CarryMateLogo variant="symbol" size="sm" decorative />
             </button>,
@@ -3196,12 +3194,15 @@ function OnboardingScreen({
   onTryDemo: () => void;
 }) {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
+    <main className="onboarding-neu mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
       <section className="rounded-[2rem] border border-line bg-white/92 p-6 shadow-soft">
         <div className="rounded-[1.75rem] border border-line bg-white p-6">
-          <CarryMateLogo variant="full" size="lg" priority className="justify-start" />
-          <p className="mt-4 text-[15px] leading-7 text-muted">
-            AI와 함께하는 대학생 팀 프로젝트 플랫폼
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+            CarryMate
+          </p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-ink">캐리메이트</h1>
+          <p className="mt-3 text-[15px] leading-7 text-muted">
+            신입생 팀플을 더 쉽게 정리하는 AI 협업 도우미
           </p>
         </div>
 
@@ -3610,11 +3611,13 @@ function WorkspaceDrawer({
         className="absolute left-0 top-0 flex h-full w-[min(88vw,20rem)] max-w-[20rem] flex-col border-r border-line bg-white p-4 shadow-[20px_0_50px_rgba(15,23,42,0.15)]"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <CarryMateLogo variant="full" size="md" priority />
-            <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand sm:text-xs">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand sm:text-xs">
               Menu
             </p>
+            <h2 id="workspace-drawer-title" className="mt-1 text-lg font-semibold text-ink">
+              메뉴
+            </h2>
           </div>
           <button
             type="button"
@@ -4470,7 +4473,7 @@ function SheetInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
+        className="neu-field w-full rounded-2xl px-4 py-3 outline-none transition"
       />
     </label>
   );
@@ -4497,7 +4500,7 @@ function SheetTextarea({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         rows={rows}
-        className="w-full resize-none rounded-2xl border border-line bg-white px-4 py-3 outline-none transition focus:border-brand"
+        className="neu-field w-full resize-none rounded-2xl px-4 py-3 outline-none transition"
       />
     </label>
   );
@@ -4514,7 +4517,7 @@ function PrimaryButton({
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-2xl bg-brand px-4 py-4 text-sm font-semibold text-white shadow-brand"
+      className="neu-primary-soft w-full rounded-2xl px-4 py-4 text-sm font-semibold text-white"
     >
       {label}
     </button>

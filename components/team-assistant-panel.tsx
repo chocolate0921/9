@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CarryMateLogo } from "@/components/carrymate-logo";
@@ -411,14 +411,14 @@ export function TeamAssistantPanel({
                     window.sessionStorage.removeItem(storageKey);
                   }
                 }}
-                className="whitespace-nowrap rounded-full border border-line bg-white px-3 py-2 text-sm font-semibold text-muted transition hover:bg-canvas sm:px-4 sm:text-base"
+                className="rounded-full border border-line bg-white px-3 py-2 text-[12px] font-semibold text-muted transition hover:bg-canvas"
               >
                 새 대화
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="whitespace-nowrap rounded-full bg-canvas px-3 py-2 text-sm font-semibold text-muted transition hover:bg-[#eef2f7] sm:px-4 sm:text-base"
+                className="rounded-full bg-canvas px-3 py-2 text-[12px] font-semibold text-muted transition hover:bg-[#eef2f7]"
               >
                 닫기
               </button>
@@ -434,10 +434,10 @@ export function TeamAssistantPanel({
             </div>
           </header>
 
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:space-y-5 sm:py-5">
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
             {messages.length === 0 ? (
-              <div className="rounded-[24px] border border-[#edf0f6] bg-[#fafcff] px-4 py-5 shadow-card sm:px-5 sm:py-6">
-                <p className="text-[14px] font-semibold text-ink">아직 대화가 없어요</p>
+              <div className="rounded-[24px] border border-[#edf0f6] bg-[#fafcff] px-4 py-5 shadow-card">
+                <p className="text-[14px] font-semibold text-ink">무엇이 궁금한가요?</p>
                 <p className="mt-1 break-keep text-[12px] leading-6 text-muted">
                   오늘의 업무, 회의, 자료를 바탕으로 바로 질문할 수 있어요.
                 </p>
@@ -448,7 +448,7 @@ export function TeamAssistantPanel({
                       type="button"
                       onClick={() => void sendQuestion(question)}
                       disabled={isSending}
-                      className="rounded-2xl border border-[#e7edf8] bg-white px-3 py-3 text-left text-sm font-semibold text-[#334155] transition hover:border-[#cfdaf2] hover:bg-[#f7f9fd] disabled:opacity-60 sm:px-4 sm:py-3.5 sm:text-base"
+                      className="rounded-2xl border border-[#e7edf8] bg-white px-3 py-3 text-left text-[12px] font-semibold text-[#334155] transition hover:border-[#cfdaf2] hover:bg-[#f7f9fd] disabled:opacity-60"
                     >
                       {question}
                     </button>
@@ -463,7 +463,7 @@ export function TeamAssistantPanel({
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-[22px] px-4 py-3 text-sm leading-6 sm:px-5 sm:py-4 sm:text-base ${
+                  className={`max-w-[85%] rounded-[22px] px-4 py-3 text-[13px] leading-6 sm:text-[14px] ${
                     message.role === "user"
                       ? "bg-[#1e70e6] text-white"
                       : "border border-[#e7edf8] bg-[#f7f9fd] text-[#283246]"
@@ -490,7 +490,7 @@ export function TeamAssistantPanel({
 
             {isSending ? (
               <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-[22px] border border-[#e7edf8] bg-[#f7f9fd] px-4 py-3 text-sm leading-6 text-[#283246] sm:px-5 sm:py-4 sm:text-base">
+                <div className="max-w-[85%] rounded-[22px] border border-[#e7edf8] bg-[#f7f9fd] px-4 py-3 text-[13px] leading-6 text-[#283246]">
                   <p className="font-semibold text-brand">
                     CarryMate AI가 팀 데이터를 확인하고 있어요.
                   </p>
@@ -502,13 +502,13 @@ export function TeamAssistantPanel({
             ) : null}
 
             {error ? (
-              <div className="rounded-[18px] border border-[#f2d7d7] bg-[#fff7f7] px-4 py-3 text-sm leading-6 text-[#b54d4d] sm:px-5 sm:py-4 sm:text-base">
+              <div className="rounded-[18px] border border-[#f2d7d7] bg-[#fff7f7] px-4 py-3 text-[12px] leading-6 text-[#b54d4d] sm:text-[13px]">
                 {error}
               </div>
             ) : null}
           </div>
 
-          <div className="border-t border-line bg-white px-4 py-4 sm:px-5 sm:py-5">
+          <div className="border-t border-line bg-white px-4 py-4 sm:px-5">
             <label className="block">
               <span className="mb-2 block text-[12px] font-semibold text-ink">질문</span>
               <textarea
@@ -525,22 +525,22 @@ export function TeamAssistantPanel({
                   event.preventDefault();
                   void sendQuestion(draft);
                 }}
-                placeholder="업무, 회의, 자료에 대해 질문해 보세요."
+                placeholder="업무, 회의, 자료에 대해 물어보세요."
                 rows={3}
                 maxLength={MAX_QUESTION_LENGTH}
-                className="w-full resize-none rounded-[20px] border border-line bg-white px-4 py-3 text-sm leading-6 outline-none transition placeholder:text-[#9aa3b2] focus:border-brand sm:px-5 sm:py-4 sm:text-base"
+                className="w-full resize-none rounded-[20px] border border-line bg-white px-4 py-3 text-[13px] leading-6 outline-none transition placeholder:text-[#9aa3b2] focus:border-brand sm:text-[14px]"
               />
             </label>
 
             <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-xs leading-5 text-muted sm:text-sm">
-                Enter 전송, Shift+Enter 줄바꿈입니다.
+              <p className="text-[11px] leading-5 text-muted sm:text-[12px]">
+                Enter는 전송, Shift+Enter는 줄바꿈입니다.
               </p>
               <button
                 type="button"
                 onClick={() => void sendQuestion(draft)}
                 disabled={isSending || !draft.trim()}
-                className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white shadow-brand transition disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:py-3.5 sm:text-base"
+                className="rounded-2xl bg-brand px-4 py-3 text-[13px] font-semibold text-white shadow-brand transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 전송
               </button>

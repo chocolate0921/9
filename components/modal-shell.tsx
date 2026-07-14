@@ -70,16 +70,16 @@ export function ModalShell({
   const panelClass =
     tone === "dark"
       ? "max-w-md border border-white/15 bg-slate-950 text-white"
-      : "max-w-md border border-line bg-white";
+      : "modal-neu-panel max-w-md";
 
   const headerTitleClass =
     tone === "dark"
-      ? "text-xl sm:text-2xl font-semibold text-white"
-      : titleClassName ?? "text-lg sm:text-xl lg:text-2xl font-semibold text-ink";
+      ? "text-lg sm:text-xl font-semibold text-white"
+      : titleClassName ?? "text-base sm:text-lg font-semibold text-ink";
 
   return (
     <div
-      className={`fixed inset-0 z-50 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 sm:pb-6 sm:pt-16 ${toneClass} ${className ?? ""}`}
+      className={`modal-neu-overlay fixed inset-0 z-50 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 sm:pb-6 sm:pt-16 ${toneClass} ${className ?? ""}`}
     >
       <div className="mx-auto flex h-full w-full max-w-5xl items-end justify-center sm:items-center">
         <div
@@ -89,19 +89,19 @@ export function ModalShell({
           aria-labelledby="modal-shell-title"
           className={`flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-[2rem] shadow-soft sm:max-h-[calc(100vh-4rem)] ${panelClass} ${contentClassName ?? ""}`}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="modal-neu-header flex items-center justify-between gap-3 px-5 py-4">
             <h2 id="modal-shell-title" className={headerTitleClass}>
               {title}
             </h2>
             <button
               type="button"
               onClick={onClose}
-            className="rounded-full bg-canvas px-3 py-2 text-sm font-medium text-muted sm:px-4 sm:py-2.5 sm:text-base"
+              className="modal-neu-close rounded-full px-3 py-2 text-sm font-semibold text-muted"
             >
               닫기
             </button>
           </div>
-          <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5 ${actionsClassName ?? ""}`}>
+          <div className={`modal-neu-body min-h-0 flex-1 overflow-y-auto px-5 py-4 ${actionsClassName ?? ""}`}>
             {children}
           </div>
         </div>

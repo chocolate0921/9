@@ -52,18 +52,18 @@ export function TaskTab({
   return (
     <div className="space-y-4 pb-4">
       {/* 팀 기여도 */}
-      <section className="rounded-[26px] border border-[#eeeaf8] bg-white p-5 shadow-[0_10px_30px_rgba(80,63,155,0.08)] sm:p-6 lg:p-7">
+      <section className="rounded-[26px] border border-[#eeeaf8] bg-white p-5 shadow-[0_10px_30px_rgba(80,63,155,0.08)]">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-extrabold text-[#282438] sm:text-3xl lg:text-4xl break-keep">
+          <div>
+            <h2 className="text-[19px] font-extrabold text-[#282438] sm:text-[22px] lg:text-[26px] break-keep">
               팀 기여도
             </h2>
-            <p className="mt-2 max-w-none whitespace-normal break-words [word-break:keep-all] text-sm leading-6 text-[#8d879b] sm:text-base lg:text-lg lg:max-w-2xl">
+            <p className="mt-2 max-w-[240px] text-[12px] leading-5 text-[#8d879b] sm:text-sm break-keep">
               이번 주 프로젝트 달성도를 기준으로 팀 흐름을 분석했어요.
             </p>
           </div>
 
-          <div className="flex shrink-0 -space-x-2">
+          <div className="flex -space-x-2">
             {activeMembers.slice(0, 3).map((member, index) => (
               <MemberAvatar
                 key={member.id}
@@ -74,19 +74,19 @@ export function TaskTab({
             ))}
 
             {activeMembers.length > 3 ? (
-              <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-[#efedff] text-xs font-bold text-[#6259e8] sm:h-10 sm:w-10 sm:text-sm">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-[#efedff] text-[10px] font-bold text-[#6259e8]">
                 +{activeMembers.length - 3}
               </span>
             ) : null}
           </div>
         </div>
 
-        <div className="mt-5 flex items-center justify-between rounded-[22px] bg-[#faf9ff] px-5 py-5 sm:px-6 sm:py-6">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-[#9b95aa] sm:text-sm">
+        <div className="mt-5 flex items-center justify-between rounded-[22px] bg-[#faf9ff] px-5 py-5">
+          <div>
+            <p className="text-[11px] font-semibold text-[#9b95aa]">
               팀 목표 달성률
             </p>
-            <p className="mt-2 text-sm font-bold text-[#373244] sm:text-base lg:text-lg">
+            <p className="mt-2 text-[13px] font-bold text-[#373244]">
               {doneCount}개 완료 / 전체 {tasks.length}개
             </p>
           </div>
@@ -97,25 +97,25 @@ export function TaskTab({
 
       {/* 미지정 업무 경고 */}
       {hasUnassignedTasks ? (
-        <section className="rounded-[22px] border-l-4 border-[#f0a625] bg-[#fffaf0] px-4 py-4 shadow-[0_8px_24px_rgba(67,55,120,0.07)] sm:px-5 sm:py-5">
+        <section className="rounded-[22px] border-l-4 border-[#f0a625] bg-[#fffaf0] px-4 py-4 shadow-[0_8px_24px_rgba(67,55,120,0.07)]">
           <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff0c9] text-[#dc941c] sm:h-10 sm:w-10">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff0c9] text-[#dc941c]">
               !
             </span>
 
             <div className="flex-1">
-              <h3 className="text-sm font-bold text-[#b8780d] sm:text-base lg:text-lg">
+              <h3 className="text-[13px] font-bold text-[#b8780d]">
                 담당자 미정 업무가 있어요
               </h3>
 
-              <p className="mt-2 text-sm leading-6 text-[#716a75] sm:text-base">
+              <p className="mt-2 text-[12px] leading-5 text-[#716a75]">
                 현재 업무량이 가장 적은 팀원에게 자동으로 다시 배정할 수 있어요.
               </p>
 
               <button
                 type="button"
                 onClick={onAutoRedistribute}
-                className="mt-3 rounded-xl bg-[#6259e8] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(98,89,232,0.25)] sm:px-5 sm:py-3 sm:text-base"
+                className="mt-3 rounded-xl bg-[#6259e8] px-4 py-2.5 text-[12px] font-bold text-white shadow-[0_8px_18px_rgba(98,89,232,0.25)]"
               >
                 자동 재분배
               </button>
@@ -128,15 +128,15 @@ export function TaskTab({
       <section>
         <div className="mb-3 flex items-center justify-between px-1">
           <div>
-            <h3 className="text-lg font-extrabold text-[#282438] sm:text-xl lg:text-2xl">
+            <h3 className="text-[16px] font-extrabold text-[#282438]">
               팀원 역할
             </h3>
-            <p className="mt-1 text-xs text-[#9891a4] sm:text-sm">
+            <p className="mt-1 text-[11px] text-[#9891a4]">
               AI가 팀원 성향에 맞는 업무를 추천해요.
             </p>
           </div>
 
-          <span className="rounded-full bg-[#efedff] px-3 py-1.5 text-xs font-bold text-[#6259e8] sm:text-sm">
+          <span className="rounded-full bg-[#efedff] px-3 py-1.5 text-[10px] font-bold text-[#6259e8]">
             AI 추천
           </span>
         </div>
@@ -211,12 +211,12 @@ export function TaskTab({
           <section key={column.id}>
             <div className="mb-3 flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-extrabold text-[#2d293b] sm:text-xl lg:text-2xl">
+                <h3 className="text-[15px] font-extrabold text-[#2d293b] sm:text-base lg:text-lg">
                   {column.label}
                 </h3>
 
                 <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-bold sm:px-3 sm:py-1.5 sm:text-sm ${column.badgeClass}`}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${column.badgeClass}`}
                 >
                   {filteredTasks.length}
                 </span>

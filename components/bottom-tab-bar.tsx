@@ -9,7 +9,8 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
 
 export function BottomTabBar({ activeTab, onChange }: { activeTab: TabId; onChange: (tab: TabId) => void }) {
   return (
-    <nav aria-label="주요 메뉴" className="neu-bottom-nav fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 z-50 w-[min(calc(100%-2rem),46rem)] -translate-x-1/2 rounded-[26px] p-2.5">
+    <nav aria-label="주요 메뉴" 
+    className="neu-bottom-nav fixed top-48 left-1/2 z-50 w-[min(calc(100%-2rem),46rem)] -translate-x-1/2 rounded-[26px] p-2.5">
       <ul className="grid grid-cols-4 gap-2">
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
