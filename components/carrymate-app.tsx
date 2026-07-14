@@ -2824,7 +2824,7 @@ export function CarryMateApp({
     <>
       <main className="carrymate-workspace mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:px-6 lg:px-8">
         <header className="carrymate-header mb-6 rounded-[28px] p-5 sm:p-6">
-          <div className="relative grid min-h-[92px] grid-cols-[48px,minmax(0,1fr),minmax(112px,auto)] items-center gap-3 sm:grid-cols-[52px,minmax(0,1fr),minmax(124px,auto)] lg:grid-cols-[56px,minmax(0,1fr),minmax(148px,auto)]">
+          <div className="relative grid min-h-[92px] grid-cols-[48px,minmax(0,1fr),minmax(124px,auto)] items-center gap-3 sm:grid-cols-[52px,minmax(0,1fr),minmax(136px,auto)] lg:grid-cols-[56px,minmax(0,1fr),minmax(156px,auto)]">
             <button
               ref={menuButtonRef}
               type="button"

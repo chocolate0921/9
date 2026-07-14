@@ -947,15 +947,13 @@ function PeriodRow({
         const isAnchor =
           rangeAnchor?.dayIndex === dayIndex && rangeAnchor.periodIndex === periodIndex;
 
-        let className = "border-[#e7e2f0] bg-white text-[#938ca1]";
-
-        if (isSelected) {
-          className = "border-emerald-500 bg-emerald-500 text-white";
-        } else if (isRecommended) {
-          className = "border-[#6259e8] bg-[#6259e8] text-white";
-        } else if (count > 0) {
-          className = "border-blue-200 bg-blue-100 text-blue-700";
-        }
+        const cellStateClass = isSelected
+          ? "border-emerald-700 bg-emerald-500 text-white shadow-[inset_0_0_0_1px_rgba(6,95,70,0.18)]"
+          : isRecommended
+            ? "border-[#6259e8] bg-violet-50 text-[#4f46e5]"
+            : count > 0
+              ? "border-blue-200 bg-blue-50 text-blue-700"
+              : "border-[#e7e2f0] bg-white text-[#938ca1]";
 
         return (
           <button
@@ -965,12 +963,12 @@ function PeriodRow({
             onClick={() => onClick(dayIndex, periodIndex)}
             aria-pressed={isSelected}
             aria-label={`${DAY_LABELS[dayIndex]} ${period.label} 공강 선택`}
-            className={`relative flex min-h-[52px] items-center justify-center bg-white text-[10px] font-extrabold transition sm:text-[11px] ${className} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
+            className={`relative flex min-h-[52px] items-center justify-center px-2 py-2 text-[10px] font-extrabold transition sm:px-3 sm:py-2.5 sm:text-[11px] ${cellStateClass} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
           >
-            {isSelected ? "✓" : isRecommended ? "★" : count > 0 ? count : ""}
-            {isSelected && isRecommended ? (
-              <span className="absolute right-1 top-1 text-[9px] text-white">★</span>
-            ) : null}
+            <span className="pointer-events-none absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#4f46e5] text-[9px] text-white shadow-[0_2px_6px_rgba(79,70,229,0.22)]">
+              {isSelected ? "✓" : ""}
+            </span>
+            {isSelected ? "" : isRecommended ? "★" : count > 0 ? count : ""}
           </button>
         );
       })}

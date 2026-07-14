@@ -79,7 +79,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .carrymate-workspace button:active { transform: translateY(0); }
 
 @media (min-width: 1024px) {
-  .carrymate-header { position: sticky; top: 16px; z-index: 30; }
   .carrymate-workspace > section { padding-bottom: 1rem; }
 }
 @media (max-width: 640px) {
@@ -89,8 +88,9 @@ button { -webkit-tap-highlight-color: transparent; }
 
 /* 2026-07 UI comfort pass: softer neumorphism and lower glare */
 .carrymate-header {
-  position: static !important;
-  top: auto !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 40 !important;
 }
 
 .neu-primary,
