@@ -2824,7 +2824,7 @@ export function CarryMateApp({
     <>
       <main className="carrymate-workspace mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:px-6 lg:px-8">
         <header className="carrymate-header mb-6 rounded-[28px] p-5 sm:p-6">
-          <div className="relative grid min-h-[92px] grid-cols-[56px,minmax(0,1fr),56px] items-start gap-3">
+          <div className="relative grid min-h-[92px] grid-cols-[48px,minmax(0,1fr),minmax(112px,auto)] items-center gap-3 sm:grid-cols-[52px,minmax(0,1fr),minmax(124px,auto)] lg:grid-cols-[56px,minmax(0,1fr),minmax(148px,auto)]">
             <button
               ref={menuButtonRef}
               type="button"
@@ -2836,7 +2836,7 @@ export function CarryMateApp({
               ☰
             </button>
 
-            <div className="min-w-0 justify-self-center text-center md:min-w-[420px] lg:min-w-[560px]">
+            <div className="min-w-0 justify-self-center text-center">
               <button
                 type="button"
                 aria-label="CarryMate 홈으로 이동"
@@ -2854,13 +2854,13 @@ export function CarryMateApp({
               </p>
             </div>
 
-            <div className="flex min-w-0 flex-col items-end gap-2">
+            <div className="flex min-w-0 flex-col items-end gap-2 justify-self-end">
               {isAuthenticated ? (
                 activeTab === "home" ? null : activeTab === "tasks" ? (
                   <button
                     type="button"
                     onClick={() => openSheet("task")}
-                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
+                    className="neu-primary inline-flex min-w-[5.5rem] items-center justify-center whitespace-nowrap rounded-2xl px-3 py-2.5 text-[11px] font-bold leading-none text-white sm:min-w-[6.5rem] sm:px-4 sm:text-[12px] lg:min-w-[7.75rem] lg:px-5 lg:text-[13px]"
                     aria-label="업무 추가"
                   >
                     + 업무 추가
@@ -2869,7 +2869,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={() => openSheet("meeting")}
-                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
+                    className="neu-primary inline-flex min-w-[5.75rem] items-center justify-center whitespace-nowrap rounded-2xl px-3 py-2.5 text-[11px] font-bold leading-none text-white sm:min-w-[7rem] sm:px-4 sm:text-[12px] lg:min-w-[8.25rem] lg:px-5 lg:text-[13px]"
                     aria-label="회의 만들기"
                   >
                     + 회의 만들기
@@ -2878,7 +2878,7 @@ export function CarryMateApp({
                   <button
                     type="button"
                     onClick={openFileCreateDialog}
-                    className="neu-primary rounded-2xl px-4 py-2.5 text-[12px] font-bold text-white"
+                    className="neu-primary inline-flex min-w-[5.5rem] items-center justify-center whitespace-nowrap rounded-2xl px-3 py-2.5 text-[11px] font-bold leading-none text-white sm:min-w-[6.5rem] sm:px-4 sm:text-[12px] lg:min-w-[7.75rem] lg:px-5 lg:text-[13px]"
                     aria-label="자료 추가"
                   >
                     + 자료 추가
@@ -2928,7 +2928,7 @@ export function CarryMateApp({
               <button
                 type="button"
                 onClick={() => openAuthSheet("signIn")}
-                className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-ink"
+                className="inline-flex min-w-[4.75rem] items-center justify-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1.5 text-[11px] font-semibold leading-none text-ink sm:min-w-[5.5rem] sm:px-4 sm:text-xs lg:min-w-[6.5rem]"
               >
                 로그인
               </button>
@@ -3058,7 +3058,7 @@ export function CarryMateApp({
               type="button"
               aria-label="CarryMate AI 열기"
               onClick={() => setIsAssistantOpen(true)}
-              className="neu-ai-button fixed right-5 bottom-5 z-[80] flex h-14 w-14 items-center justify-center rounded-full text-white transition hover:scale-[1.04] active:scale-[0.97] sm:right-8 sm:bottom-8"
+              className="fixed right-5 bottom-5 z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-[#d7def6] bg-white text-brand shadow-[0_14px_34px_rgba(30,112,230,0.18)] transition hover:scale-[1.04] hover:border-[#bfd0f6] hover:shadow-[0_18px_38px_rgba(30,112,230,0.24)] active:scale-[0.97] sm:right-8 sm:bottom-8"
             >
               <CarryMateLogo variant="symbol" size="sm" decorative />
             </button>,
