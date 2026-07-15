@@ -3076,7 +3076,7 @@ export function CarryMateApp({
               type="button"
               aria-label="CarryMate AI 열기"
               onClick={() => setIsAssistantOpen(true)}
-              className="fixed right-5 bottom-5 z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-[#d7def6] bg-white text-brand shadow-[0_14px_34px_rgba(30,112,230,0.18)] transition hover:scale-[1.04] hover:border-[#bfd0f6] hover:shadow-[0_18px_38px_rgba(30,112,230,0.24)] active:scale-[0.97] sm:right-8 sm:bottom-8"
+              className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-[#d7def6] bg-white text-brand shadow-[0_14px_34px_rgba(30,112,230,0.18)] transition hover:scale-[1.04] hover:border-[#bfd0f6] hover:shadow-[0_18px_38px_rgba(30,112,230,0.24)] active:scale-[0.97] sm:right-6 lg:right-6 lg:bottom-6"
             >
               <CarryMateLogo variant="symbol" size="sm" decorative />
             </button>,
@@ -3215,7 +3215,14 @@ function OnboardingScreen({
     <main className="onboarding-neu mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
       <section className="rounded-[2rem] border border-line bg-white/92 p-6 shadow-soft">
         <div className="rounded-[1.75rem] border border-line bg-white p-6">
-          <CarryMateLogo variant="full" size="lg" priority className="justify-center" />
+          <div className="flex w-full min-w-0 justify-center overflow-hidden px-2">
+            <CarryMateLogo
+              variant="full"
+              size="lg"
+              priority
+              className="origin-center scale-[0.84] max-w-full sm:scale-100"
+            />
+          </div>
           <p className="mt-3 text-[15px] leading-7 text-muted">
             AI와 함께하는 대학생 팀 프로젝트 협업 플랫폼
           </p>
