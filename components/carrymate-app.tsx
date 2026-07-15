@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { ModalShell } from "@/components/modal-shell";
 import { CarryMateLogo } from "@/components/carrymate-logo";
+import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { FileTab } from "@/components/file-tab";
 import { HomeTab } from "@/components/home-tab";
 import { MeetingRoomSheet } from "@/components/meeting-room-sheet";
@@ -2947,7 +2948,7 @@ export function CarryMateApp({
               </button>
             )}
           </div>
-          <nav className="mt-4 grid grid-cols-4 gap-2 lg:gap-3">
+          <nav className="mt-4 hidden grid-cols-4 gap-2 lg:grid lg:gap-3">
             {[
               { id: "home", label: "홈" },
               { id: "tasks", label: "업무" },
@@ -3064,6 +3065,10 @@ export function CarryMateApp({
         </section>
 
       </main>
+
+      {viewMode === "workspace" ? (
+        <BottomTabBar activeTab={activeTab} onChange={(tab) => setActiveTab(tab)} />
+      ) : null}
 
       {typeof document !== "undefined" && viewMode === "workspace" && !isAssistantOpen
         ? createPortal(
