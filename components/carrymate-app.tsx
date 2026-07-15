@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1722,18 +1722,22 @@ export function CarryMateApp({
     setMeetingDraftPreset(null);
   };
 
-  const handleAddTask = (title: string) => {
-    // 새 업무 추가 시 현재 active 멤버 중 한 명에게 바로 배정해
-    // 홈/업무 탭이 즉시 연결되어 보이도록 한다.
-    const assignee = activeMembers[tasks.length % Math.max(activeMembers.length, 1)];
-    const dueAt = getTaskDueAt(0, 18);
+  const handleAddTask = (input: {
+    title: string;
+    assigneeId: string | null;
+    priority: "high" | "medium" | "low";
+    dueDate: string;
+  }) => {
+    const assignee = activeMembers.find((member) => member.id === input.assigneeId) ?? null;
+    const dueAt = input.dueDate ? new Date(`${input.dueDate}T18:00:00`).toISOString() : getTaskDueAt(0, 18);
+    const dueLabel = formatTaskDueLabel(dueAt);
     const nextTask: Task = {
       id: `task-${Date.now()}`,
-      title,
+      title: input.title,
       assigneeId: assignee?.id ?? null,
       status: "todo",
-      priority: "medium",
-      dueLabel: "오늘",
+      priority: input.priority,
+      dueLabel,
       dueAt,
       aiSuggestedRole: assignee
         ? `${assignee.name}(${assignee.skillTag})에게 추천`
@@ -1753,11 +1757,11 @@ export function CarryMateApp({
     void (async () => {
       const result = await createTask({
         teamId: project.id,
-        title,
+        title: input.title,
         description: nextTask.description,
         assigneeId: assignee?.id && isUuid(assignee.id) ? assignee.id : null,
         status: "todo",
-        priority: "medium",
+        priority: input.priority,
         dueAt,
         aiSuggestedRole: nextTask.aiSuggestedRole,
       });
@@ -2573,11 +2577,12 @@ export function CarryMateApp({
 
     if (sheetMode === "task") {
       return (
-        <QuickActionSheet
+        <TaskQuickActionSheet
           title="업무 빠르게 추가"
-          description="발표 전에 바로 시연할 수 있도록 제목만 입력하면 오늘 업무로 추가됩니다."
+          description="업무 제목과 함께 담당자, 마감일, 우선순위를 함께 정할 수 있습니다."
           actionLabel="업무 추가"
           placeholder="예: 발표 결론 슬라이드 다듬기"
+          members={activeMembers}
           onClose={closeSheet}
           onSubmit={handleAddTask}
         />
@@ -2762,9 +2767,7 @@ export function CarryMateApp({
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-10 pt-7">
         <div className="rounded-[2rem] border border-line bg-white p-6 shadow-soft">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand">
-            CarryMate
-          </p>
+          <CarryMateLogo variant="full" size="lg" priority className="justify-center" />
           <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.02em] text-ink">
             마지막 팀을 확인하는 중입니다
           </h1>
@@ -2824,29 +2827,39 @@ export function CarryMateApp({
     <>
       <main className="carrymate-workspace mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-4 sm:px-6 lg:px-8">
         <header className="carrymate-header mb-6 rounded-[28px] p-5 sm:p-6">
-          <div className="relative grid min-h-[92px] grid-cols-[48px,minmax(0,1fr),minmax(124px,auto)] items-center gap-3 sm:grid-cols-[52px,minmax(0,1fr),minmax(136px,auto)] lg:grid-cols-[56px,minmax(0,1fr),minmax(156px,auto)]">
+          <div className="relative grid min-h-[136px] grid-cols-[auto,minmax(0,1fr),auto] items-start gap-3 sm:min-h-[148px] sm:gap-4 lg:min-h-[164px]">
             <button
               ref={menuButtonRef}
               type="button"
               aria-label="메뉴 열기"
               aria-expanded={isMenuOpen}
               onClick={() => setIsMenuOpen((current) => !current)}
-              className="neu-icon-button flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-semibold text-ink"
+              className="neu-icon-button flex h-12 w-12 items-center justify-center self-start rounded-2xl text-xl font-semibold text-ink"
             >
               ☰
             </button>
 
-            <div className="min-w-0 justify-self-center text-center">
+            <div className="min-w-0 justify-self-center px-2 pt-1 text-center sm:px-4 sm:pt-2">
               <button
                 type="button"
                 aria-label="CarryMate 홈으로 이동"
                 onClick={() => setActiveTab("home")}
-                className="mx-auto inline-flex items-center justify-center"
+                className="mx-auto inline-flex items-center justify-center gap-3"
               >
-                <CarryMateLogo variant="symbol" size="sm" className="md:hidden" priority />
-                <CarryMateLogo variant="full" size="lg" className="hidden md:inline-flex" priority />
+                <CarryMateLogo
+                  variant="symbol"
+                  size="lg"
+                  priority
+                  className="!h-[48px] !w-[48px] shrink-0 sm:!h-[54px] sm:!w-[54px] lg:!h-[60px] lg:!w-[60px]"
+                />
+                <CarryMateLogo
+                  variant="wordmark"
+                  size="lg"
+                  priority
+                  className="!h-[34px] !w-[130px] shrink-0 sm:!h-[38px] sm:!w-[170px] lg:!h-[44px] lg:!w-[260px]"
+                />
               </button>
-              <h1 className="mt-1 truncate text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[27px] lg:text-[32px]">
+              <h1 className="mt-2 truncate text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[27px] lg:text-[32px]">
                 {project.name}
               </h1>
               <p className="mt-1 truncate text-[12px] text-muted sm:text-[13px] lg:text-sm">
@@ -2854,7 +2867,7 @@ export function CarryMateApp({
               </p>
             </div>
 
-            <div className="flex min-w-0 flex-col items-end gap-2 justify-self-end">
+            <div className="flex min-w-0 flex-col items-end justify-self-end gap-2 self-start">
               {isAuthenticated ? (
                 activeTab === "home" ? null : activeTab === "tasks" ? (
                   <button
@@ -3197,12 +3210,9 @@ function OnboardingScreen({
     <main className="onboarding-neu mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-8">
       <section className="rounded-[2rem] border border-line bg-white/92 p-6 shadow-soft">
         <div className="rounded-[1.75rem] border border-line bg-white p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
-            CarryMate
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-ink">캐리메이트</h1>
+          <CarryMateLogo variant="full" size="lg" priority className="justify-center" />
           <p className="mt-3 text-[15px] leading-7 text-muted">
-            신입생 팀플을 더 쉽게 정리하는 AI 협업 도우미
+            AI와 함께하는 대학생 팀 프로젝트 협업 플랫폼
           </p>
         </div>
 
@@ -4333,6 +4343,114 @@ function QuickActionSheet({
   );
 }
 
+function TaskQuickActionSheet({
+  title,
+  description,
+  actionLabel,
+  placeholder,
+  members,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string;
+  placeholder: string;
+  members: Array<{ id: string; name: string }>;
+  onClose: () => void;
+  onSubmit: (input: {
+    title: string;
+    assigneeId: string | null;
+    priority: "high" | "medium" | "low";
+    dueDate: string;
+  }) => void;
+}) {
+  const [titleValue, setTitleValue] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [priority, setPriority] = useState<"high" | "medium" | "low">("medium");
+  const [dueDate, setDueDate] = useState("");
+  const isSubmitDisabled = !titleValue.trim();
+
+  return (
+    <SheetShell title={title} onClose={onClose}>
+      <p className="text-sm leading-6 text-muted sm:text-base break-keep">{description}</p>
+      <div className="space-y-3">
+        <SheetInput
+          label="업무 제목"
+          value={titleValue}
+          onChange={setTitleValue}
+          placeholder={placeholder}
+        />
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-[13px] font-semibold text-ink">담당자</span>
+            <select
+              value={assigneeId}
+              onChange={(event) => setAssigneeId(event.target.value)}
+              className="neu-field w-full rounded-2xl px-4 py-3 outline-none transition"
+            >
+              <option value="">담당자 미정</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-[13px] font-semibold text-ink">우선순위</span>
+            <select
+              value={priority}
+              onChange={(event) => setPriority(event.target.value as "high" | "medium" | "low")}
+              className="neu-field w-full rounded-2xl px-4 py-3 outline-none transition"
+            >
+              <option value="high">높음</option>
+              <option value="medium">보통</option>
+              <option value="low">낮음</option>
+            </select>
+          </label>
+        </div>
+
+        <SheetInput
+          label="마감일 (선택)"
+          type="date"
+          value={dueDate}
+          onChange={setDueDate}
+          placeholder=""
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-2xl border border-line bg-white px-4 py-4 text-sm font-semibold text-ink transition hover:bg-canvas"
+        >
+          취소
+        </button>
+        <PrimaryButton
+          label={actionLabel}
+          disabled={isSubmitDisabled}
+          onClick={() => {
+            const trimmedTitle = titleValue.trim();
+            if (!trimmedTitle) {
+              return;
+            }
+
+            onSubmit({
+              title: trimmedTitle,
+              assigneeId: assigneeId || null,
+              priority,
+              dueDate,
+            });
+          }}
+        />
+      </div>
+    </SheetShell>
+  );
+}
+
 function MeetingCreateSheet({
   initialValues,
   onClose,
@@ -4509,15 +4627,18 @@ function SheetTextarea({
 function PrimaryButton({
   label,
   onClick,
+  disabled = false,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="neu-primary-soft w-full rounded-2xl px-4 py-4 text-sm font-semibold text-white"
+      disabled={disabled}
+      className="neu-primary-soft w-full rounded-2xl px-4 py-4 text-sm font-semibold text-white disabled:opacity-60"
     >
       {label}
     </button>
@@ -4564,4 +4685,5 @@ function FakeQrCode({ value }: { value: string }) {
 function Corner({ className }: { className: string }) {
   return <span className={`absolute h-8 w-8 border-brand ${className}`} />;
 }
+
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   ConfirmedMeeting,
   ScheduleSlot,
@@ -507,32 +507,34 @@ export function ScheduleTab({
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1.55fr,0.9fr]">
-          <div className="overflow-x-auto rounded-[22px] border border-[#e4def0] bg-[#e4def0] p-px">
-            <div className="min-w-[520px]">
-              <div className="grid grid-cols-[44px_repeat(5,minmax(0,1fr))] gap-px">
-                <div className="min-h-[44px] bg-[#f7f6fd]" />
-              {DAY_LABELS.map((day) => (
-                <div
-                  key={day}
-                  className="flex min-h-[44px] items-center justify-center bg-[#f7f6fd] px-1 text-center text-[10px] font-extrabold text-[#6259e8] sm:text-[11px]"
-                >
-                  {day}
-                </div>
-              ))}
+          <div className="overflow-hidden rounded-2xl border border-[#ddd9f2] bg-[#e7e5f1]">
+            <div className="overflow-x-auto">
+              <div className="min-w-[520px]">
+                <div className="grid grid-cols-[44px_repeat(5,minmax(0,1fr))] gap-0">
+                  <div className="min-h-[44px] border-b border-[#e7e5f1] bg-[#f7f6fd]" />
+                  {DAY_LABELS.map((day) => (
+                    <div
+                      key={day}
+                      className="flex min-h-[44px] items-center justify-center border-b border-l border-[#e7e5f1] bg-[#f7f6fd] px-1 text-center text-[10px] font-extrabold text-[#6259e8] sm:text-[11px]"
+                    >
+                      {day}
+                    </div>
+                  ))}
 
-              {visiblePeriods.map((period, periodIndex) => (
-                <PeriodRow
-                  key={period.id}
-                  counts={availabilityCountByKey}
-                  disabled={!editableMember || availabilitySaving}
-                  period={period}
-                  periodIndex={periodIndex}
-                  rangeAnchor={rangeAnchor}
-                  recommendedKeys={recommendedAvailabilityKeys}
-                  selectedKeys={selectedAvailabilitySet}
-                  onClick={handlePeriodClick}
-                />
-              ))}
+                {visiblePeriods.map((period, periodIndex) => (
+                    <PeriodRow
+                      key={period.id}
+                      counts={availabilityCountByKey}
+                      disabled={!editableMember || availabilitySaving}
+                      period={period}
+                      periodIndex={periodIndex}
+                      rangeAnchor={rangeAnchor}
+                      recommendedKeys={recommendedAvailabilityKeys}
+                      selectedKeys={selectedAvailabilitySet}
+                      onClick={handlePeriodClick}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -586,10 +588,10 @@ export function ScheduleTab({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-bold">
-          <LegendChip className="border border-emerald-500 bg-emerald-500 text-white" label="내 공강" />
-          <LegendChip className="border border-blue-200 bg-blue-100 text-blue-700" label="팀원 공강" />
+          <LegendChip className="border border-[#6FBE7A] bg-[#DDF5DF] text-[#3FA45A]" label="내 공강" />
+          <LegendChip className="border border-[#8EB8FF] bg-[#E8F1FF] text-[#2563eb]" label="팀원 공강" />
           <LegendChip className="border border-[#e7e2f0] bg-white text-[#938ca1]" label="미입력" />
-          <LegendChip className="border border-[#6259e8] bg-[#6259e8] text-white" label="추천 시간" />
+          <LegendChip className="border border-[#8C73F0] bg-[#EEE8FF] text-[#6B56D8]" label="추천 시간" />
         </div>
 
         {availabilityMessage && !availabilityMessage.startsWith("✅") ? (
@@ -931,7 +933,7 @@ function PeriodRow({
 }) {
   return (
     <>
-      <div className="flex min-h-[52px] flex-col items-center justify-center bg-[#f7f6fd] px-1 text-center">
+      <div className="flex min-h-[52px] flex-col items-center justify-center border-t border-[#e7e5f1] bg-[#f7f6fd] px-1 text-center">
         <p className="text-[10px] font-extrabold text-[#2d293b] sm:text-[11px]">{period.label}</p>
         <p className="mt-0.5 text-[8px] leading-3 text-[#938ca1] sm:text-[9px]">
           {period.start}
@@ -948,11 +950,11 @@ function PeriodRow({
           rangeAnchor?.dayIndex === dayIndex && rangeAnchor.periodIndex === periodIndex;
 
         const cellStateClass = isSelected
-          ? "border-emerald-700 bg-emerald-500 text-white shadow-[inset_0_0_0_1px_rgba(6,95,70,0.18)]"
+          ? "border-[#6FBE7A] bg-[#DDF5DF] text-[#26492E]"
           : isRecommended
-            ? "border-[#6259e8] bg-violet-50 text-[#4f46e5]"
+            ? "border-[#8C73F0] bg-[#EEE8FF] text-[#6B56D8]"
             : count > 0
-              ? "border-blue-200 bg-blue-50 text-blue-700"
+              ? "border-[#8EB8FF] bg-[#E8F1FF] text-[#2563eb]"
               : "border-[#e7e2f0] bg-white text-[#938ca1]";
 
         return (
@@ -963,11 +965,13 @@ function PeriodRow({
             onClick={() => onClick(dayIndex, periodIndex)}
             aria-pressed={isSelected}
             aria-label={`${DAY_LABELS[dayIndex]} ${period.label} 공강 선택`}
-            className={`relative flex min-h-[52px] items-center justify-center px-2 py-2 text-[10px] font-extrabold transition sm:px-3 sm:py-2.5 sm:text-[11px] ${cellStateClass} ${isAnchor ? "ring-2 ring-[#1f2937]/20" : ""} hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
+            className={`relative flex min-h-[52px] items-center justify-center rounded-none border-l border-t px-2 py-2 text-[10px] font-extrabold transition-colors duration-150 sm:px-3 sm:py-2.5 sm:text-[11px] ${cellStateClass} ${isAnchor ? "ring-2 ring-[#6FBE7A] ring-offset-0" : ""} hover:border-[#6FBE7A] hover:bg-[#d6f1d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6259e8] focus-visible:ring-offset-1 disabled:opacity-60`}
           >
-            <span className="pointer-events-none absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#4f46e5] text-[9px] text-white shadow-[0_2px_6px_rgba(79,70,229,0.22)]">
-              {isSelected ? "✓" : ""}
-            </span>
+            {isSelected ? (
+              <span className="pointer-events-none absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#3FA45A] text-[9px] text-white shadow-none">
+                ✓
+              </span>
+            ) : null}
             {isSelected ? "" : isRecommended ? "★" : count > 0 ? count : ""}
           </button>
         );

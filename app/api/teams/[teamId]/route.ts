@@ -57,7 +57,7 @@ export async function DELETE(
       {
         ok: false,
         stage: "config",
-        message: "? ??젣瑜?泥섎━?????놁뒿?덈떎. ?쒕쾭 ?ㅼ젙???뺤씤??二쇱꽭??",
+        message: "팀 삭제를 처리할 수 없습니다. 서버 설정을 확인해 주세요.",
       },
       { status: 500 },
     );
@@ -80,7 +80,7 @@ export async function DELETE(
       {
         ok: false,
         stage: "token",
-        message: "濡쒓렇?몄씠 ?꾩슂?⑸땲??",
+        message: "로그인이 필요합니다.",
       },
       { status: 401 },
     );
@@ -101,7 +101,7 @@ export async function DELETE(
 
   const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
   if (userError || !userData.user) {
-    return fail("user", teamId, "濡쒓렇???뺣낫瑜??뺤씤?????놁뒿?덈떎.", userError);
+    return fail("user", teamId, "로그인 정보를 확인할 수 없습니다.", userError);
   }
 
   const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
@@ -120,7 +120,7 @@ export async function DELETE(
     .maybeSingle();
 
   if (leaderError) {
-    return fail("team_members", teamId, "???沅뚰븳???뺤씤?????놁뒿?덈떎.", leaderError);
+    return fail("team_members", teamId, "팀장 권한을 확인할 수 없습니다.", leaderError);
   }
 
   if (!leaderRow?.is_leader) {
@@ -134,7 +134,7 @@ export async function DELETE(
       {
         ok: false,
         stage: "team_members",
-        message: "??λ쭔 ?????젣?????덉뒿?덈떎.",
+        message: "팀장만 팀을 삭제할 수 있습니다.",
       },
       { status: 403 },
     );
@@ -146,7 +146,7 @@ export async function DELETE(
     .eq("team_id", teamId);
 
   if (sharedFilesError) {
-    return fail("shared_files", teamId, "?먮즺 紐⑸줉???뺤씤?????놁뒿?덈떎.", sharedFilesError);
+    return fail("shared_files", teamId, "자료 목록을 확인할 수 없습니다.", sharedFilesError);
   }
 
   const sharedFileIds = (sharedFiles ?? []).map((row) => row.id);
@@ -159,7 +159,7 @@ export async function DELETE(
       : null;
 
   if (versionsResult?.error) {
-    return fail("file_versions", teamId, "?먮즺 ???寃쎈줈瑜??뺤씤?????놁뒿?덈떎.", versionsResult.error);
+    return fail("file_versions", teamId, "자료 버전 경로를 확인할 수 없습니다.", versionsResult.error);
   }
 
   const storagePaths = (versionsResult?.data ?? [])
@@ -182,19 +182,19 @@ export async function DELETE(
         /does not exist/i.test(storageErrorMessage);
 
       if (!ignoreMissingObject) {
-        return fail("storage", teamId, "?쇰? ??μ냼 ?뚯씪????젣?섏? 紐삵뻽?듬땲??", storageError);
+        return fail("storage", teamId, "일부 Storage 파일을 삭제하지 못했습니다.", storageError);
       }
     }
   }
 
   const { error: deleteError } = await adminClient.from("teams").delete().eq("id", teamId);
   if (deleteError) {
-    return fail("teams", teamId, "? ??젣???ㅽ뙣?덉뒿?덈떎.", deleteError);
+    return fail("teams", teamId, "팀 삭제에 실패했습니다.", deleteError);
   }
 
   return NextResponse.json({
     ok: true,
-    message: "?????젣?섏뿀?듬땲??",
+    message: "팀이 삭제되었습니다.",
   });
 }
 

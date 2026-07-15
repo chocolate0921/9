@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { normalizeStoredFileCategory } from "@/lib/supabase/files";
 import type { FileCategory, FileItem } from "@/types/carrymate";
@@ -172,12 +172,8 @@ export function FileTab({
     setMessage("");
   };
 
-  const openCreateDialog = useCallback(() => {
-    if (!canUpload) {
-      setMessage("실제 UUID 팀에서만 자료 업로드를 사용할 수 있습니다.");
-      return;
-    }
 
+  const forceOpenCreateDialog = useCallback(() => {
     setDialogMode({ kind: "create" });
     setResourceType("file");
     setSelectedCategory("reference");
@@ -185,7 +181,7 @@ export function FileTab({
     setLinkUrl("");
     setLinkNote("");
     setMessage("");
-  }, [canUpload]);
+  }, []);
 
   useEffect(() => {
     if (!createDialogRequestId || createDialogRequestId === lastCreateDialogRequestIdRef.current) {
@@ -193,8 +189,8 @@ export function FileTab({
     }
 
     lastCreateDialogRequestIdRef.current = createDialogRequestId;
-    openCreateDialog();
-  }, [createDialogRequestId, openCreateDialog]);
+    forceOpenCreateDialog();
+  }, [createDialogRequestId, forceOpenCreateDialog]);
 
   const openEditDialog = (file: FileItem) => {
     setDialogMode({ kind: "edit", file });
@@ -347,12 +343,12 @@ export function FileTab({
       <div className="rounded-[18px] border border-[#ebe7f3] bg-white px-4 py-3 shadow-card transition hover:shadow-[0_12px_28px_rgba(64,52,115,0.08)] focus-within:border-[#cfdaf2] focus-within:shadow-[0_12px_28px_rgba(64,52,115,0.08)]">
         <div className="flex items-center gap-3">
           <span className="text-[#9a94a8]" aria-hidden="true">
-            ⌕
+            🔎
           </span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="자료명, 업로더, 카테고리 검색"
+            placeholder="자료명, 업로드, 카테고리 검색"
             className="min-w-0 w-full bg-transparent text-[12px] outline-none placeholder:text-[#aaa4b5] sm:text-sm lg:text-base"
           />
         </div>
@@ -411,7 +407,7 @@ export function FileTab({
                         onClick={() => openEditDialog(file)}
                         className="min-h-10 rounded-full border border-[#e5e9f2] px-3 py-2 text-[11px] font-semibold text-[#445066] sm:text-xs lg:text-sm disabled:opacity-60"
                       >
-                        편집
+                        수정
                       </button>
                       <button
                         type="button"
@@ -428,7 +424,7 @@ export function FileTab({
             );
           })
         ) : (
-          <Empty onCreate={openCreateDialog} />
+          <Empty onCreate={forceOpenCreateDialog} />
         )}
       </div>
 
@@ -453,7 +449,7 @@ export function FileTab({
           {resourceType === "file" ? (
             <div className="space-y-3">
               <div className="rounded-2xl border border-dashed border-[#d8deea] bg-[#fafcff] px-4 py-5 text-center text-[12px] leading-6 text-[#64708a] sm:text-sm lg:text-base break-keep">
-                기존 Storage 업로드 흐름을 그대로 사용합니다.
+                기존 Storage 업로드 흐름과 동일하게 사용합니다.
               </div>
               <input
                 ref={fileInputRef}
@@ -469,7 +465,7 @@ export function FileTab({
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full min-h-11 rounded-2xl bg-[#1e70e6] px-4 py-4 text-sm font-semibold text-white shadow-brand sm:text-[15px] lg:text-base"
               >
-                파일 선택 후 업로드
+                파일 선택 및 업로드
               </button>
               {isUploading ? (
                 <div className="space-y-2">
@@ -539,7 +535,7 @@ export function FileTab({
       {dialogMode.kind === "delete" ? (
         <ConfirmDialog
           title="자료 삭제"
-          body="이 자료를 정말 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다."
+          body={"이 자료를 정말 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다."}
           actionLabel="삭제"
           onClose={closeDialog}
           onAction={() => void handleDelete()}
